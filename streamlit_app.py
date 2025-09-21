@@ -992,53 +992,7 @@ def main():
     # 法令別分析
     st.header("⚖️ 法令別分析")
 
-    # 法令別の手続数
-    st.subheader("📚 法令別手続数")
-    law_counts = filtered_df['法令名'].value_counts()
-    if len(law_counts) > 0:
-        # グラフ表示用に上位30件を取得して降順にソート
-        law_counts_display = law_counts.head(30).sort_values(ascending=True)
-        # ラベルを省略処理（長い場合は...で省略）
-        truncated_labels = [label[:40] + '...' if len(label) > 40 else label for label in law_counts_display.index]
-        fig_law = px.bar(
-            x=law_counts_display.values,
-            y=truncated_labels,
-            orientation='h',
-            title="法令別手続数",
-            labels={'x': '手続数', 'y': '法令名'},
-            hover_data={'y': law_counts_display.index}  # ホバー時に完全なラベルを表示
-,
-                text_auto=True
-            )
-        fig_law.update_layout(height=600)
-        st.plotly_chart(fig_law, use_container_width=True)
-        del fig_law
-
-    # 法令別のオンライン化状況
-    st.subheader("📊 主要法令のオンライン化状況")
-
-    # 手続数が多い法令のオンライン化状況
-    top_laws = filtered_df['法令名'].value_counts().head(10).index
-    law_online_data = []
-
-    for law in top_laws:
-        law_df = filtered_df[filtered_df['法令名'] == law]
-        total = len(law_df)
-        online = len(law_df[law_df['オンライン化の実施状況'].str.contains('実施済', na=False)])
-        rate = (online / total * 100) if total > 0 else 0
-        law_online_data.append({
-            '法令名': law[:30] + ('...' if len(law) > 30 else ''),
-            '手続数': total,
-            'オンライン化済': online,
-            'オンライン化率': rate
-        })
-
-    law_online_df = pd.DataFrame(law_online_data)
-
-    # 法令番号の形式別分析
-    st.subheader("⚖️ 法令種別の分析")
-
-    # 法律、政令、省令などの分類
+    # 法律、政令、省令などの分類関数
     def classify_law_type(law_number):
         if pd.isna(law_number):
             return '不明'
@@ -1056,43 +1010,65 @@ def main():
         else:
             return 'その他'
 
-    # in-place 追加は避け、一時DataFrameに列を付与
-    law_type_series = filtered_df['法令番号'].apply(classify_law_type) if '法令番号' in filtered_df.columns else pd.Series([], dtype='object')
-    tmp_df = filtered_df.assign(法令種別=law_type_series)
-    law_type_counts = tmp_df['法令種別'].value_counts()
-
     col1, col2 = st.columns(2)
+
+    # 法令種別の分析（左側）
     with col1:
+        st.subheader("📊 法令種別の分布")
+        # in-place 追加は避け、一時DataFrameに列を付与
+        law_type_series = filtered_df['法令番号'].apply(classify_law_type) if '法令番号' in filtered_df.columns else pd.Series([], dtype='object')
+        tmp_df = filtered_df.assign(法令種別=law_type_series)
+        law_type_counts = tmp_df['法令種別'].value_counts()
+
         fig_law_type = px.pie(
             values=law_type_counts.values,
             names=law_type_counts.index,
             title="法令種別の分布",
             hole=0.4
         )
+        fig_law_type.update_layout(height=500)
         st.plotly_chart(fig_law_type, use_container_width=True)
         del fig_law_type
 
+    # 法令別の手続数（右側）
     with col2:
-        # 法令種別ごとのオンライン化率
-        law_type_online = tmp_df.groupby('法令種別').agg({
-            '手続ID': 'count',
-            'オンライン化率': 'mean'
-        }).reset_index()
-        law_type_online.columns = ['法令種別', '手続数', '平均オンライン化率']
-        # 平均オンライン化率で降順ソート
-        law_type_online = law_type_online.sort_values('平均オンライン化率', ascending=False)
+        st.subheader("📚 法令別手続数")
+        law_counts = filtered_df['法令名'].value_counts()
+        if len(law_counts) > 0:
+            # グラフ表示用に上位20件を取得して降順にソート
+            law_counts_display = law_counts.head(20).sort_values(ascending=True)
+            # ラベルを省略処理（長い場合は...で省略）
+            truncated_labels = [label[:30] + '...' if len(label) > 30 else label for label in law_counts_display.index]
+            fig_law = px.bar(
+                x=law_counts_display.values,
+                y=truncated_labels,
+                orientation='h',
+                title="法令別手続数（上位20件）",
+                labels={'x': '手続数', 'y': '法令名'},
+                hover_data={'y': law_counts_display.index},  # ホバー時に完全なラベルを表示
+                text_auto=True
+            )
+            fig_law.update_layout(height=500)
+            st.plotly_chart(fig_law, use_container_width=True)
+            del fig_law
+        else:
+            st.info("法令データが見つかりません")
 
-        fig_law_type_online = px.bar(
-            law_type_online,
-            x='法令種別',
-            y='平均オンライン化率',
-            title="法令種別ごとの平均オンライン化率",
-            labels={'平均オンライン化率': '平均オンライン化率 (%)'},
-            text_auto=True,
-            category_orders={'法令種別': law_type_online['法令種別'].tolist()}  # オンライン化率が高い順に並べる
-        )
-        st.plotly_chart(fig_law_type_online, use_container_width=True)
-        del fig_law_type_online
+    # 手続数が多い法令のオンライン化状況データを準備（使用しないが既存コードの互換性のため）
+    top_laws = filtered_df['法令名'].value_counts().head(10).index
+    law_online_data = []
+    for law in top_laws:
+        law_df = filtered_df[filtered_df['法令名'] == law]
+        total = len(law_df)
+        online = len(law_df[law_df['オンライン化の実施状況'].str.contains('実施済', na=False)])
+        rate = (online / total * 100) if total > 0 else 0
+        law_online_data.append({
+            '法令名': law[:30] + ('...' if len(law) > 30 else ''),
+            '手続数': total,
+            'オンライン化済': online,
+            'オンライン化率': rate
+        })
+    law_online_df = pd.DataFrame(law_online_data)
 
     st.header("🏢 府省庁別分析")
 
@@ -1424,66 +1400,68 @@ def main():
 
     st.divider()
 
-    # 士業分析
-    st.header("⚖️ 申請に関連する士業分析")
-    st.caption("代理申請が可能な士業の分布を分析します。")
+    # 士業・提出機関分析
+    st.header("🏛️ 申請関連分析")
+    st.caption("代理申請が可能な士業と申請の提出先機関の分布を分析します。")
 
-    if '申請に関連する士業' in filtered_df.columns:
-        # マルチバリュー対応（カンマ区切り等）
-        professionals = filtered_df['申請に関連する士業'].dropna().apply(_split_multi_values).explode()
-        professionals = professionals[professionals.str.strip() != '']
+    col1, col2 = st.columns(2)
 
-        if len(professionals) > 0:
-            prof_counts = professionals.value_counts()
-            # グラフ表示用に上位20件を取得して降順にソート
-            prof_counts_display = prof_counts.head(20).sort_values(ascending=True)
+    # 士業分析（左側）
+    with col1:
+        st.subheader("⚖️ 申請に関連する士業")
+        if '申請に関連する士業' in filtered_df.columns:
+            # マルチバリュー対応（カンマ区切り等）
+            professionals = filtered_df['申請に関連する士業'].dropna().apply(_split_multi_values).explode()
+            professionals = professionals[professionals.str.strip() != '']
 
-            fig_prof = px.bar(
-                x=prof_counts_display.values,
-                y=prof_counts_display.index,
-                orientation='h',
-                title="申請に関連する士業別手続数",
-                labels={'x': '手続数', 'y': '士業'},
-                text_auto=True
-            )
-            fig_prof.update_layout(height=500)
-            st.plotly_chart(fig_prof, use_container_width=True)
-            del fig_prof
+            if len(professionals) > 0:
+                prof_counts = professionals.value_counts()
+                # グラフ表示用に上位20件を取得して降順にソート
+                prof_counts_display = prof_counts.head(20).sort_values(ascending=True)
+
+                fig_prof = px.bar(
+                    x=prof_counts_display.values,
+                    y=prof_counts_display.index,
+                    orientation='h',
+                    title="士業別手続数",
+                    labels={'x': '手続数', 'y': '士業'},
+                    text_auto=True
+                )
+                fig_prof.update_layout(height=500)
+                st.plotly_chart(fig_prof, use_container_width=True)
+                del fig_prof
+            else:
+                st.info("申請に関連する士業のデータがありません")
         else:
-            st.info("申請に関連する士業のデータがありません")
-    else:
-        st.warning("申請に関連する士業の列が存在しません")
+            st.warning("申請に関連する士業の列が存在しません")
 
-    st.divider()
+    # 提出機関分析（右側）
+    with col2:
+        st.subheader("🏢 申請を提出する機関")
+        if '申請を提出する機関' in filtered_df.columns:
+            # マルチバリュー対応（セミコロン区切り等）
+            submit_orgs = filtered_df['申請を提出する機関'].dropna().astype(str)
+            if submit_orgs.str.contains(';').any():
+                submit_orgs = submit_orgs.str.split(';').explode()
+            submit_orgs = submit_orgs.str.strip()
+            submit_orgs = submit_orgs[submit_orgs != '']
 
-    # 提出機関分析
-    st.header("🏛️ 申請を提出する機関分析")
-    st.caption("申請の提出先機関の分布を分析します。")
+            if len(submit_orgs) > 0:
+                org_counts = submit_orgs.value_counts()
 
-    if '申請を提出する機関' in filtered_df.columns:
-        # マルチバリュー対応（セミコロン区切り等）
-        submit_orgs = filtered_df['申請を提出する機関'].dropna().astype(str)
-        if submit_orgs.str.contains(';').any():
-            submit_orgs = submit_orgs.str.split(';').explode()
-        submit_orgs = submit_orgs.str.strip()
-        submit_orgs = submit_orgs[submit_orgs != '']
-
-        if len(submit_orgs) > 0:
-            org_counts = submit_orgs.value_counts()
-
-            fig_org = px.pie(
-                values=org_counts.values,
-                names=org_counts.index,
-                title="申請を提出する機関の分布",
-                hole=0.4
-            )
-            fig_org.update_layout(height=450)
-            st.plotly_chart(fig_org, use_container_width=True)
-            del fig_org
+                fig_org = px.pie(
+                    values=org_counts.values,
+                    names=org_counts.index,
+                    title="提出先機関の分布",
+                    hole=0.4
+                )
+                fig_org.update_layout(height=500)
+                st.plotly_chart(fig_org, use_container_width=True)
+                del fig_org
+            else:
+                st.info("申請を提出する機関のデータがありません")
         else:
-            st.info("申請を提出する機関のデータがありません")
-    else:
-        st.warning("申請を提出する機関の列が存在しません")
+            st.warning("申請を提出する機関の列が存在しません")
 
     st.divider()
 
