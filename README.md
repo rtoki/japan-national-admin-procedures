@@ -90,17 +90,6 @@ Render Dashboardで以下の設定を使用：
 - **Build Command**: `pip install -r requirements.txt`
 - **Start Command**: `streamlit run streamlit_app.py --server.port=$PORT --server.address=0.0.0.0`
 
-#### 注意事項
-
-- **無料プラン**: 512MBメモリ、15分非アクティブでスリープ
-- **推奨プラン**: Starterプラン（$7/月）以上でパフォーマンス向上
-- **初回起動**: データファイルの変換で30秒程度かかる場合があります
-
-### Streamlit Community Cloudへのデプロイ
-
-1. [Streamlit Community Cloud](https://streamlit.io/cloud)にサインアップ
-2. GitHubリポジトリを接続
-3. アプリをデプロイ（自動的に`streamlit_app.py`が検出される）
 
 ## 📁 プロジェクト構成
 
