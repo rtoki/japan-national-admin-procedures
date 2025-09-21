@@ -690,24 +690,47 @@ def main():
     # 概要統計
     st.header(":material/analytics: 概要統計")
 
-    # KPIカード（カラムの存在を確認しつつ安全に算出）
-    col1, col2, col3, col4 = st.columns(4)
-    n_total = len(filtered_df)
-    with col1:
-        delta_val = n_total - len(df)
-        st.metric("総手続数", f"{n_total:,}", delta=(f"{delta_val:+,}" if delta_val != 0 else None))
-    with col2:
-        total_proc_count = filtered_df['総手続件数'].sum() if '総手続件数' in filtered_df.columns else 0
-        st.metric("総手続件数", f"{int(total_proc_count):,}")
-    with col3:
-        online_count = filtered_df['オンライン手続件数'].sum() if 'オンライン手続件数' in filtered_df.columns else 0
-        st.metric("オンライン手続件数", f"{int(online_count):,}")
-    with col4:
-        online_rate = (online_count / total_proc_count * 100) if total_proc_count else 0
-        st.metric("オンライン化率", f"{online_rate:.1f}%")
+    # KPIカード（モバイル対応: 2x2グリッド）
+    if is_mobile:
+        col1, col2 = st.columns(2)
+        n_total = len(filtered_df)
+        with col1:
+            delta_val = n_total - len(df)
+            st.metric("総手続数", f"{n_total:,}", delta=(f"{delta_val:+,}" if delta_val != 0 else None))
+        with col2:
+            total_proc_count = filtered_df['総手続件数'].sum() if '総手続件数' in filtered_df.columns else 0
+            st.metric("総手続件数", f"{int(total_proc_count):,}")
 
-    # グラフ
-    col1, col2 = st.columns(2)
+        col3, col4 = st.columns(2)
+        with col3:
+            online_count = filtered_df['オンライン手続件数'].sum() if 'オンライン手続件数' in filtered_df.columns else 0
+            st.metric("オンライン手続件数", f"{int(online_count):,}")
+        with col4:
+            online_rate = (online_count / total_proc_count * 100) if total_proc_count else 0
+            st.metric("オンライン化率", f"{online_rate:.1f}%")
+    else:
+        col1, col2, col3, col4 = st.columns(4)
+        n_total = len(filtered_df)
+        with col1:
+            delta_val = n_total - len(df)
+            st.metric("総手続数", f"{n_total:,}", delta=(f"{delta_val:+,}" if delta_val != 0 else None))
+        with col2:
+            total_proc_count = filtered_df['総手続件数'].sum() if '総手続件数' in filtered_df.columns else 0
+            st.metric("総手続件数", f"{int(total_proc_count):,}")
+        with col3:
+            online_count = filtered_df['オンライン手続件数'].sum() if 'オンライン手続件数' in filtered_df.columns else 0
+            st.metric("オンライン手続件数", f"{int(online_count):,}")
+        with col4:
+            online_rate = (online_count / total_proc_count * 100) if total_proc_count else 0
+            st.metric("オンライン化率", f"{online_rate:.1f}%")
+
+    # グラフ（モバイルでは縦並び）
+    if is_mobile:
+        # モバイルでは縦並び表示
+        col1 = st.container()
+        col2 = st.container()
+    else:
+        col1, col2 = st.columns(2)
 
     with col1:
         # オンライン化状況の円グラフ（正規化適用）
@@ -722,6 +745,9 @@ def main():
                 title="オンライン化の実施状況",
                 hole=0.4
             )
+            # モバイルでは高さを調整
+            if is_mobile:
+                fig_pie.update_layout(height=350, margin=dict(l=10, r=10, t=40, b=10))
             st.plotly_chart(fig_pie, use_container_width=True)
             del fig_pie
         else:
@@ -746,10 +772,14 @@ def main():
                 y='手続類型',
                 orientation='h',
                 title="手続類型",
-                labels={'件数': '件数', '手続類型': '手続類型'}
-    ,
+                labels={'件数': '件数', '手続類型': '手続類型'},
                 text_auto=True
             )
+            # モバイルでは高さと文字サイズを調整
+            if is_mobile:
+                fig_bar.update_layout(height=350, margin=dict(l=10, r=10, t=40, b=10))
+                fig_bar.update_xaxes(tickfont=dict(size=10))
+                fig_bar.update_yaxes(tickfont=dict(size=10))
             st.plotly_chart(fig_bar, use_container_width=True)
             del fig_bar
         else:
@@ -789,7 +819,34 @@ def main():
         text_auto=True,
         category_orders={'所管府省庁': ministry_totals.index.tolist()}  # 手続数が多い順に並べる
     )
-    fig_ministry.update_layout(xaxis_tickangle=-45, barmode='stack')
+    # モバイル対応 + レジェンドを下部に配置
+    if is_mobile:
+        fig_ministry.update_layout(
+            xaxis_tickangle=-90,  # モバイルでは90度回転
+            barmode='stack',
+            height=400,
+            margin=dict(l=10, r=10, t=40, b=100),  # 下部マージンを増やす
+            xaxis=dict(tickfont=dict(size=9)),
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.3,
+                xanchor="center",
+                x=0.5
+            )
+        )
+    else:
+        fig_ministry.update_layout(
+            xaxis_tickangle=-45,
+            barmode='stack',
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.2,
+                xanchor="center",
+                x=0.5
+            )
+        )
     st.plotly_chart(fig_ministry, use_container_width=True)
     del fig_ministry
 
@@ -807,34 +864,36 @@ def main():
     ministry_stats = ministry_stats[ministry_stats['総手続件数'] > 0]
     ministry_stats = ministry_stats.sort_values('オンライン化率', ascending=False).head(20)
 
-    # 手続主体×受け手の組み合わせ分析
-    st.header(":material/compare_arrows: 手続主体×受け手の組み合わせ分析")
-    st.caption("どの主体からどの受け手への手続が多いかをマトリックス形式で分析します。")
+    # 手続主体×受け手の組み合わせ分析（モバイルでは非表示）
+    if not is_mobile:
+        st.header(":material/compare_arrows: 手続主体×受け手の組み合わせ分析")
+        st.caption("どの主体からどの受け手への手続が多いかをマトリックス形式で分析します。")
 
-    if '手続主体' in filtered_df.columns and '手続の受け手' in filtered_df.columns:
-        # クロス集計表を作成
-        cross_tab = pd.crosstab(
-            filtered_df['手続主体'],
-            filtered_df['手続の受け手']
-        )
-
-        if cross_tab.shape[0] > 0 and cross_tab.shape[1] > 0:
-            # ヒートマップ表示
-            fig_heatmap = px.imshow(
-                cross_tab,
-                labels=dict(x="手続の受け手", y="手続主体", color="手続数"),
-                text_auto=True,
-                aspect='auto',
-                color_continuous_scale='Blues',
-                title="手続主体×受け手の手続数分布"
+    if not is_mobile:
+        if '手続主体' in filtered_df.columns and '手続の受け手' in filtered_df.columns:
+            # クロス集計表を作成
+            cross_tab = pd.crosstab(
+                filtered_df['手続主体'],
+                filtered_df['手続の受け手']
             )
-            fig_heatmap.update_layout(height=600)
-            st.plotly_chart(fig_heatmap, use_container_width=True)
-            del fig_heatmap
+
+            if cross_tab.shape[0] > 0 and cross_tab.shape[1] > 0:
+                # ヒートマップ表示
+                fig_heatmap = px.imshow(
+                    cross_tab,
+                    labels=dict(x="手続の受け手", y="手続主体", color="手続数"),
+                    text_auto=True,
+                    aspect='auto',
+                    color_continuous_scale='Blues',
+                    title="手続主体×受け手の手続数分布"
+                )
+                fig_heatmap.update_layout(height=600)
+                st.plotly_chart(fig_heatmap, use_container_width=True)
+                del fig_heatmap
+            else:
+                st.info("分析に必要なデータが不足しています")
         else:
-            st.info("分析に必要なデータが不足しています")
-    else:
-        st.warning("手続主体または手続の受け手のデータが存在しません")
+            st.warning("手続主体または手続の受け手のデータが存在しません")
 
     # 法令別分析
     st.header(":material/gavel: 法令別分析")
@@ -857,7 +916,12 @@ def main():
         else:
             return 'その他'
 
-    col1, col2 = st.columns(2)
+    # モバイル対応のカラムレイアウト
+    if is_mobile:
+        col1 = st.container()
+        col2 = st.container()
+    else:
+        col1, col2 = st.columns(2)
 
     # 法令種別の分析（左側）
     with col1:
@@ -875,7 +939,11 @@ def main():
             title="法令種別の分布",
             hole=0.4
         )
-        fig_law_type.update_layout(height=500)
+        # モバイル対応
+        if is_mobile:
+            fig_law_type.update_layout(height=350, margin=dict(l=10, r=10, t=40, b=10))
+        else:
+            fig_law_type.update_layout(height=500)
         st.plotly_chart(fig_law_type, use_container_width=True)
         del fig_law_type
 
@@ -897,7 +965,15 @@ def main():
                 hover_data={'y': law_counts_display.index},  # ホバー時に完全なラベルを表示
                 text_auto=True
             )
-            fig_law.update_layout(height=500)
+            # モバイル対応
+            if is_mobile:
+                fig_law.update_layout(
+                    height=400,
+                    margin=dict(l=10, r=10, t=40, b=10),
+                    yaxis=dict(tickfont=dict(size=9))
+                )
+            else:
+                fig_law.update_layout(height=500)
             st.plotly_chart(fig_law, use_container_width=True)
             del fig_law
         else:
@@ -908,7 +984,12 @@ def main():
     st.header(":material/computer: 申請システム分析")
     st.caption("申請システムと事務処理システムの利用状況を分析します。")
 
-    col1, col2 = st.columns(2)
+    # モバイル対応のカラムレイアウト
+    if is_mobile:
+        col1 = st.container()
+        col2 = st.container()
+    else:
+        col1, col2 = st.columns(2)
 
     # 申請システム（申請）の分析
     with col1:
@@ -942,7 +1023,16 @@ def main():
                     text_auto=True,
                     hover_data={'y': system_counts_display.index}  # ホバー時に完全なラベルを表示
                 )
-                fig_system.update_layout(height=600)
+                # モバイル対応
+                if is_mobile:
+                    fig_system.update_layout(
+                        height=400,
+                        margin=dict(l=10, r=10, t=40, b=10),
+                        yaxis=dict(tickfont=dict(size=8)),
+                        xaxis=dict(tickfont=dict(size=8))
+                    )
+                else:
+                    fig_system.update_layout(height=600)
                 st.plotly_chart(fig_system, use_container_width=True)
                 del fig_system
 
@@ -1002,7 +1092,16 @@ def main():
                     text_auto=True,
                     hover_data={'y': process_system_counts_display.index}  # ホバー時に完全なラベルを表示
                 )
-                fig_process_system.update_layout(height=600)
+                # モバイル対応
+                if is_mobile:
+                    fig_process_system.update_layout(
+                        height=400,
+                        margin=dict(l=10, r=10, t=40, b=10),
+                        yaxis=dict(tickfont=dict(size=8)),
+                        xaxis=dict(tickfont=dict(size=8))
+                    )
+                else:
+                    fig_process_system.update_layout(height=600)
                 st.plotly_chart(fig_process_system, use_container_width=True)
                 del fig_process_system
             else:
@@ -1027,8 +1126,6 @@ def main():
             dist_cols.append((remove_col, '撤廃/省略状況の分布'))
         if method_col in filtered_df.columns:
             dist_cols.append((method_col, '提出方法の分布'))
-        if sign_col in filtered_df.columns:
-            dist_cols.append((sign_col, '電子署名の要否の分布'))
 
         if dist_cols:
             pie_top = 8  # 固定値に設定（スライダー削除）
@@ -1073,19 +1170,22 @@ def main():
                 if len(info_series) > 0:
                     # 全ての情報を集計
                     info_counts = info_series.value_counts()
-                    info_df = info_counts.reset_index()
-                    info_df.columns = ['記載情報', '件数']
-                    # グラフ表示用に上位25件を取得して降順にソート
-                    info_df_display = info_df.sort_values('件数', ascending=True).head(25)
+                    # 上位10件とその他を集計
+                    if len(info_counts) > 10:
+                        top_10 = info_counts.head(10)
+                        others_sum = info_counts[10:].sum()
+                        info_counts = pd.concat([top_10, pd.Series([others_sum], index=['その他'])])
 
-                    fig_info = px.bar(
-                        info_df_display,
-                        x='件数', y='記載情報', orientation='h',
-                        title="記載情報の頻出",
-                        labels={'件数': '件数', '記載情報': '記載情報'},
-                        text_auto=True
+                    fig_info = px.pie(
+                        values=info_counts.values,
+                        names=info_counts.index,
+                        title="記載情報の頻出（TOP10）",
+                        hole=0.4
                     )
-                    fig_info.update_layout(margin=dict(l=0, r=0, t=40, b=0), height=600)
+                    if is_mobile:
+                        fig_info.update_layout(height=350, margin=dict(l=10, r=10, t=40, b=10))
+                    else:
+                        fig_info.update_layout(height=450, margin=dict(l=0, r=0, t=40, b=0))
                     st.plotly_chart(fig_info, use_container_width=True)
                     del fig_info
                 else:
@@ -1102,18 +1202,22 @@ def main():
                 if len(att_series) > 0:
                     # 全ての添付書類を集計
                     att_counts = att_series.value_counts()
-                    att_df = att_counts.reset_index()
-                    att_df.columns = ['添付書類', '件数']
-                    # 降順にソート（グラフ上で上から下へ多い順に表示）、上位30件のみ表示用
-                    att_df_display = att_df.sort_values('件数', ascending=True).head(30)
-                    fig_att = px.bar(
-                        att_df_display,
-                        x='件数', y='添付書類', orientation='h',
-                        title="添付書類の頻出",
-                        labels={'件数': '件数', '添付書類': '添付書類'},
-                        text_auto=True
+                    # 上位10件とその他を集計
+                    if len(att_counts) > 10:
+                        top_10 = att_counts.head(10)
+                        others_sum = att_counts[10:].sum()
+                        att_counts = pd.concat([top_10, pd.Series([others_sum], index=['その他'])])
+
+                    fig_att = px.pie(
+                        values=att_counts.values,
+                        names=att_counts.index,
+                        title="添付書類の頻出（TOP10）",
+                        hole=0.4
                     )
-                    fig_att.update_layout(margin=dict(l=0, r=0, t=40, b=0), height=600)
+                    if is_mobile:
+                        fig_att.update_layout(height=350, margin=dict(l=10, r=10, t=40, b=10))
+                    else:
+                        fig_att.update_layout(height=450, margin=dict(l=0, r=0, t=40, b=0))
                     st.plotly_chart(fig_att, use_container_width=True)
                     del fig_att
                 else:
@@ -1127,7 +1231,12 @@ def main():
     st.header(":material/event: ライフイベント分析")
     st.caption("個人および法人のライフイベントごとの手続数を分析します。")
 
-    col1, col2 = st.columns(2)
+    # モバイル対応のカラムレイアウト
+    if is_mobile:
+        col1 = st.container()
+        col2 = st.container()
+    else:
+        col1, col2 = st.columns(2)
 
     # 個人ライフイベント
     with col1:
@@ -1139,18 +1248,26 @@ def main():
 
             if len(personal_events) > 0:
                 event_counts = personal_events.value_counts()
-                # グラフ表示用に上位20件を取得して降順にソート
-                event_counts_display = event_counts.head(20).sort_values(ascending=True)
+                # 上位10件とその他を集計
+                if len(event_counts) > 10:
+                    top_10 = event_counts.head(10)
+                    others_sum = event_counts[10:].sum()
+                    event_counts = pd.concat([top_10, pd.Series([others_sum], index=['その他'])])
 
-                fig_personal = px.bar(
-                    x=event_counts_display.values,
-                    y=event_counts_display.index,
-                    orientation='h',
-                    title="個人ライフイベント別手続数",
-                    labels={'x': '手続数', 'y': 'ライフイベント'},
-                    text_auto=True
+                fig_personal = px.pie(
+                    values=event_counts.values,
+                    names=event_counts.index,
+                    title="個人ライフイベント別手続数（TOP10）",
+                    hole=0.4
                 )
-                fig_personal.update_layout(height=500)
+                # モバイル対応
+                if is_mobile:
+                    fig_personal.update_layout(
+                        height=350,
+                        margin=dict(l=10, r=10, t=40, b=10)
+                    )
+                else:
+                    fig_personal.update_layout(height=450)
                 st.plotly_chart(fig_personal, use_container_width=True)
                 del fig_personal
             else:
@@ -1168,18 +1285,26 @@ def main():
 
             if len(corporate_events) > 0:
                 event_counts = corporate_events.value_counts()
-                # グラフ表示用に上位20件を取得して降順にソート
-                event_counts_display = event_counts.head(20).sort_values(ascending=True)
+                # 上位10件とその他を集計
+                if len(event_counts) > 10:
+                    top_10 = event_counts.head(10)
+                    others_sum = event_counts[10:].sum()
+                    event_counts = pd.concat([top_10, pd.Series([others_sum], index=['その他'])])
 
-                fig_corporate = px.bar(
-                    x=event_counts_display.values,
-                    y=event_counts_display.index,
-                    orientation='h',
-                    title="法人ライフイベント別手続数",
-                    labels={'x': '手続数', 'y': 'ライフイベント'},
-                    text_auto=True
+                fig_corporate = px.pie(
+                    values=event_counts.values,
+                    names=event_counts.index,
+                    title="法人ライフイベント別手続数（TOP10）",
+                    hole=0.4
                 )
-                fig_corporate.update_layout(height=500)
+                # モバイル対応
+                if is_mobile:
+                    fig_corporate.update_layout(
+                        height=350,
+                        margin=dict(l=10, r=10, t=40, b=10)
+                    )
+                else:
+                    fig_corporate.update_layout(height=450)
                 st.plotly_chart(fig_corporate, use_container_width=True)
                 del fig_corporate
             else:
@@ -1193,7 +1318,12 @@ def main():
     st.header(":material/domain: 申請関連分析")
     st.caption("代理申請が可能な士業と申請の提出先機関の分布を分析します。")
 
-    col1, col2 = st.columns(2)
+    # モバイル対応のカラムレイアウト
+    if is_mobile:
+        col1 = st.container()
+        col2 = st.container()
+    else:
+        col1, col2 = st.columns(2)
 
     # 士業分析（左側）
     with col1:
@@ -1216,7 +1346,15 @@ def main():
                     labels={'x': '手続数', 'y': '士業'},
                     text_auto=True
                 )
-                fig_prof.update_layout(height=500)
+                # モバイル対応
+                if is_mobile:
+                    fig_prof.update_layout(
+                        height=400,
+                        margin=dict(l=10, r=10, t=40, b=10),
+                        yaxis=dict(tickfont=dict(size=9))
+                    )
+                else:
+                    fig_prof.update_layout(height=500)
                 st.plotly_chart(fig_prof, use_container_width=True)
                 del fig_prof
             else:
@@ -1248,7 +1386,15 @@ def main():
                     labels={'x': '手続数', 'y': '提出先機関'},
                     text_auto=True
                 )
-                fig_org.update_layout(height=500)
+                # モバイル対応
+                if is_mobile:
+                    fig_org.update_layout(
+                        height=400,
+                        margin=dict(l=10, r=10, t=40, b=10),
+                        yaxis=dict(tickfont=dict(size=9))
+                    )
+                else:
+                    fig_org.update_layout(height=500)
                 st.plotly_chart(fig_org, use_container_width=True)
                 del fig_org
             else:
