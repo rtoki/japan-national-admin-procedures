@@ -1044,14 +1044,17 @@ def main():
             'オンライン化率': 'mean'
         }).reset_index()
         law_type_online.columns = ['法令種別', '手続数', '平均オンライン化率']
-    
+        # 平均オンライン化率で降順ソート
+        law_type_online = law_type_online.sort_values('平均オンライン化率', ascending=False)
+
         fig_law_type_online = px.bar(
             law_type_online,
             x='法令種別',
             y='平均オンライン化率',
             title="法令種別ごとの平均オンライン化率",
             labels={'平均オンライン化率': '平均オンライン化率 (%)'},
-            text_auto=True
+            text_auto=True,
+            category_orders={'法令種別': law_type_online['法令種別'].tolist()}  # オンライン化率が高い順に並べる
         )
         st.plotly_chart(fig_law_type_online, use_container_width=True)
         del fig_law_type_online
@@ -1064,22 +1067,21 @@ def main():
     # 府省庁別・オンライン化状況別の集計
     ministry_online_df = filtered_df.groupby(['所管府省庁', 'オンライン化の実施状況']).size().reset_index(name='手続数')
 
-    # 上位20府省庁を取得
-    top_ministries = filtered_df['所管府省庁'].value_counts().head(20).index
-    ministry_online_df = ministry_online_df[ministry_online_df['所管府省庁'].isin(top_ministries)]
+    # 府省庁ごとの合計手続数を計算して、それを基準にソート（全府省庁を含む）
+    ministry_totals = ministry_online_df.groupby('所管府省庁')['手続数'].sum().sort_values(ascending=False)
 
     # オンライン化状況のラベルを正規化
     ministry_online_df['オンライン化の実施状況'] = ministry_online_df['オンライン化の実施状況'].apply(
         lambda x: _normalize_label('オンライン化の実施状況', x)
     )
 
-    # 積み上げ棒グラフ
+    # 積み上げ棒グラフ（手続数が多い順に並べ替え）
     fig_ministry = px.bar(
         ministry_online_df,
         x='所管府省庁',
         y='手続数',
         color='オンライン化の実施状況',
-        title="府省庁別手続数（TOP20・オンライン化状況別）",
+        title="府省庁別手続数（オンライン化状況別）",
         labels={'手続数': '手続数', '所管府省庁': '府省庁'},
         color_discrete_map={
             '実施済': '#2ca02c',
@@ -1088,7 +1090,8 @@ def main():
             '適用除外': '#9467bd',
             'その他': '#8c564b'
         },
-        text_auto=True
+        text_auto=True,
+        category_orders={'所管府省庁': ministry_totals.index.tolist()}  # 手続数が多い順に並べる
     )
     fig_ministry.update_layout(xaxis_tickangle=-45, barmode='stack')
     st.plotly_chart(fig_ministry, use_container_width=True)
@@ -1110,72 +1113,78 @@ def main():
 
 
     st.header("💻 申請システム分析")
+    st.caption("申請システムと事務処理システムの利用状況を分析します。")
+
+    col1, col2 = st.columns(2)
 
     # 申請システム（申請）の分析
-    st.subheader("📊 申請システムの利用状況")
+    with col1:
+        st.subheader("📊 申請システムの利用状況")
 
-    # 申請システムのデータを集計
-    system_df = filtered_df[filtered_df['情報システム(申請)'].notna()].copy()
+        # 申請システムのデータを集計
+        system_df = filtered_df[filtered_df['情報システム(申請)'].notna()].copy()
 
-    if len(system_df) > 0:
-        # システム別の手続数を集計
-        system_counts = system_df['情報システム(申請)'].value_counts().head(20)
-        # 降順にソート（グラフ上で上から下へ多い順に表示）
-        system_counts = system_counts.sort_values(ascending=True)
-    
-        # 申請システム別手続数の棒グラフ
-        fig_system = px.bar(
-            x=system_counts.values,
-            y=system_counts.index,
-            orientation='h',
-            title="申請システム別手続数（TOP20）",
-            labels={'x': '手続数', 'y': '申請システム'}
-,
+        if len(system_df) > 0:
+            # システム別の手続数を集計
+            system_counts = system_df['情報システム(申請)'].value_counts().head(20)
+            # 降順にソート（グラフ上で上から下へ多い順に表示）
+            system_counts = system_counts.sort_values(ascending=True)
+
+            # 申請システム別手続数の棒グラフ
+            fig_system = px.bar(
+                x=system_counts.values,
+                y=system_counts.index,
+                orientation='h',
+                title="申請システム別手続数（TOP20）",
+                labels={'x': '手続数', 'y': '申請システム'},
                 text_auto=True
             )
-        st.plotly_chart(fig_system, use_container_width=True)
-        del fig_system
-    
-        # システム別のオンライン化率
-        system_stats = system_df.groupby('情報システム(申請)').agg({
-            '手続ID': 'count',
-            '総手続件数': 'sum',
-            'オンライン手続件数': 'sum'
-        }).reset_index()
-        system_stats.columns = ['申請システム', '手続数', '総手続件数', 'オンライン手続件数']
-        system_stats['オンライン化率'] = (
-            system_stats['オンライン手続件数'] / system_stats['総手続件数'] * 100
-        ).round(2)
-        system_stats = system_stats[system_stats['総手続件数'] > 0]
-        system_stats = system_stats.sort_values('オンライン化率', ascending=False).head(20)
-    else:
-        st.info("申請システムのデータがありません")
+            fig_system.update_layout(height=600)
+            st.plotly_chart(fig_system, use_container_width=True)
+            del fig_system
+
+            # システム別のオンライン化率
+            system_stats = system_df.groupby('情報システム(申請)').agg({
+                '手続ID': 'count',
+                '総手続件数': 'sum',
+                'オンライン手続件数': 'sum'
+            }).reset_index()
+            system_stats.columns = ['申請システム', '手続数', '総手続件数', 'オンライン手続件数']
+            system_stats['オンライン化率'] = (
+                system_stats['オンライン手続件数'] / system_stats['総手続件数'] * 100
+            ).round(2)
+            system_stats = system_stats[system_stats['総手続件数'] > 0]
+            system_stats = system_stats.sort_values('オンライン化率', ascending=False).head(20)
+        else:
+            st.info("申請システムのデータがありません")
 
     # 事務処理システムの分析
-    st.subheader("🖥️ 事務処理システムの利用状況")
+    with col2:
+        st.subheader("🖥️ 事務処理システムの利用状況")
 
-    # 事務処理システムのデータを集計
-    process_system_df = filtered_df[filtered_df['情報システム(事務処理)'].notna()].copy()
+        # 事務処理システムのデータを集計
+        process_system_df = filtered_df[filtered_df['情報システム(事務処理)'].notna()].copy()
 
-    if len(process_system_df) > 0:
-        # システム別の手続数を集計
-        process_system_counts = process_system_df['情報システム(事務処理)'].value_counts().head(20)
-        # 降順にソート（グラフ上で上から下へ多い順に表示）
-        process_system_counts = process_system_counts.sort_values(ascending=True)
-    
-        # 事務処理システム別手続数の棒グラフ
-        fig_process_system = px.bar(
-            x=process_system_counts.values,
-            y=process_system_counts.index,
-            orientation='h',
-            title="事務処理システム別手続数（TOP20）",
-            labels={'x': '手続数', 'y': '事務処理システム'}
-,
+        if len(process_system_df) > 0:
+            # システム別の手続数を集計
+            process_system_counts = process_system_df['情報システム(事務処理)'].value_counts().head(20)
+            # 降順にソート（グラフ上で上から下へ多い順に表示）
+            process_system_counts = process_system_counts.sort_values(ascending=True)
+
+            # 事務処理システム別手続数の棒グラフ
+            fig_process_system = px.bar(
+                x=process_system_counts.values,
+                y=process_system_counts.index,
+                orientation='h',
+                title="事務処理システム別手続数（TOP20）",
+                labels={'x': '手続数', 'y': '事務処理システム'},
                 text_auto=True
             )
-        st.plotly_chart(fig_process_system, use_container_width=True)
-
-        del fig_process_system
+            fig_process_system.update_layout(height=600)
+            st.plotly_chart(fig_process_system, use_container_width=True)
+            del fig_process_system
+        else:
+            st.info("事務処理システムのデータがありません")
     
         # 申請システムと事務処理システムの組み合わせ分析
     st.header("📝 申請文書分析")
@@ -1251,6 +1260,72 @@ def main():
                 st.info("添付書類の値が見つかりません")
 
         st.divider()
+
+    # ライフイベント分析
+    st.header("🌟 ライフイベント分析")
+    st.caption("個人および法人のライフイベントごとの手続数を分析します。")
+
+    col1, col2 = st.columns(2)
+
+    # 個人ライフイベント
+    with col1:
+        st.subheader("👤 個人ライフイベント")
+        if '手続が行われるイベント(個人)' in filtered_df.columns:
+            # マルチバリュー対応（カンマ区切り等）
+            personal_events = filtered_df['手続が行われるイベント(個人)'].dropna().apply(_split_multi_values).explode()
+            personal_events = personal_events[personal_events.str.strip() != '']
+
+            if len(personal_events) > 0:
+                event_counts = personal_events.value_counts().head(15)
+                # 降順にソート（最も多いものが上に）
+                event_counts = event_counts.sort_values(ascending=True)
+
+                fig_personal = px.bar(
+                    x=event_counts.values,
+                    y=event_counts.index,
+                    orientation='h',
+                    title="個人ライフイベント別手続数（TOP15）",
+                    labels={'x': '手続数', 'y': 'ライフイベント'},
+                    text_auto=True
+                )
+                fig_personal.update_layout(height=500)
+                st.plotly_chart(fig_personal, use_container_width=True)
+                del fig_personal
+            else:
+                st.info("個人ライフイベントのデータがありません")
+        else:
+            st.warning("個人ライフイベントの列が存在しません")
+
+    # 法人ライフイベント
+    with col2:
+        st.subheader("🏢 法人ライフイベント")
+        if '手続が行われるイベント(法人)' in filtered_df.columns:
+            # マルチバリュー対応（カンマ区切り等）
+            corporate_events = filtered_df['手続が行われるイベント(法人)'].dropna().apply(_split_multi_values).explode()
+            corporate_events = corporate_events[corporate_events.str.strip() != '']
+
+            if len(corporate_events) > 0:
+                event_counts = corporate_events.value_counts().head(15)
+                # 降順にソート（最も多いものが上に）
+                event_counts = event_counts.sort_values(ascending=True)
+
+                fig_corporate = px.bar(
+                    x=event_counts.values,
+                    y=event_counts.index,
+                    orientation='h',
+                    title="法人ライフイベント別手続数（TOP15）",
+                    labels={'x': '手続数', 'y': 'ライフイベント'},
+                    text_auto=True
+                )
+                fig_corporate.update_layout(height=500)
+                st.plotly_chart(fig_corporate, use_container_width=True)
+                del fig_corporate
+            else:
+                st.info("法人ライフイベントのデータがありません")
+        else:
+            st.warning("法人ライフイベントの列が存在しません")
+
+    st.divider()
 
     # 手続主体×受け手の組み合わせ分析
     st.header("🤝 手続主体×受け手の組み合わせ分析")
