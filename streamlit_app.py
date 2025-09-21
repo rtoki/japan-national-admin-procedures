@@ -30,7 +30,7 @@ np.set_printoptions(precision=3, suppress=True)
 # ページ設定
 st.set_page_config(
     page_title="行政手続等オンライン化状況ダッシュボード",
-    page_icon="⚖️",
+    page_icon=":material/gavel:",
     layout="wide",
     initial_sidebar_state="collapsed"  # モバイルではデフォルトで折りたたみ
 )
@@ -428,40 +428,131 @@ def show_procedure_detail(procedure_id: str, df: pd.DataFrame):
     if procedure.empty:
         st.error(f"手続ID: {procedure_id} が見つかりません")
         return
-    
+
     r = procedure.iloc[0].to_dict()
-    
-    # ヘッダー情報
-    st.markdown(f"### 📋 {r.get('手続名', '—')}")
-    
-    # 基本情報タブ
-    tab1, tab2, tab3, tab4 = st.tabs(["基本情報", "オンライン化", "申請情報", "全データ"])
-    
+
+    # タイトル部
+    st.title(f":material/description: {r.get('手続名', '')}")
+    st.caption(f"手続ID: {r.get('手続ID','')} | 所管府省庁: {r.get('所管府省庁','')}")
+
+    # 主要指標を上部に表示
+    st.markdown("### :material/insights: 主要指標")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        st.metric("手続ID", r.get('手続ID', '—'))
+    with col2:
+        status = _normalize_label('オンライン化の実施状況', r.get('オンライン化の実施状況', ''))
+        st.metric("オンライン化状況", status if status else "—")
+    with col3:
+        st.metric("総手続件数", f"{int(r.get('総手続件数', 0) or 0):,}")
+    with col4:
+        st.metric("オンライン手続件数", f"{int(r.get('オンライン手続件数', 0) or 0):,}")
+    with col5:
+        rate = float(r.get('オンライン化率', 0) or 0)
+        st.metric("オンライン化率", f"{rate:.1f}%")
+
+    st.divider()
+
+    # タブで情報を整理
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["基本情報", "法令情報", "オンライン化", "申請・書類", "ライフイベント", "全データ"])
+
     with tab1:
-        st.write("**手続ID:**", r.get('手続ID', '—'))
-        st.write("**法令名:**", r.get('法令名', '—'))
-        st.write("**所管府省庁:**", r.get('所管府省庁', '—'))
-        st.write("**手続類型:**", r.get('手続類型', '—'))
-        st.write("**手続の受手・申請先機関:**", r.get('手続の受手・申請先機関', '—'))
-        st.write("**法人番号:**", r.get('法人番号', '—'))
-        st.write("**手続の主体:**", r.get('手続の主体', '—'))
-        
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.markdown("#### 基本情報")
+            st.write("**所管府省庁:**", r.get('所管府省庁', '—'))
+            st.write("**手続名:**", r.get('手続名', '—'))
+            st.write("**手続類型:**", _normalize_label('手続類型', r.get('手続類型', '—')))
+            st.write("**手続主体:**", r.get('手続主体', '—'))
+        with col_right:
+            st.markdown("#### 実施情報")
+            st.write("**手続の受け手:**", r.get('手続の受け手', '—'))
+            st.write("**経由機関:**", r.get('経由機関', '—'))
+            st.write("**事務区分:**", r.get('事務区分', '—'))
+            st.write("**府省共通手続:**", r.get('府省共通手続', '—'))
+
     with tab2:
-        st.write("**オンライン化の状況:**", r.get('オンライン化の状況', '—'))
-        st.write("**オンライン化実施時期:**", r.get('オンライン化実施時期', '—'))
-        st.write("**オンライン利用率:**", r.get('オンライン利用率', '—'))
-        st.write("**府省共通手続:**", r.get('府省共通手続', '—'))
-        
-        st.write("**申請システム名:**", r.get('申請システム名', '—'))
-        st.write("**添付書類の名称:**", r.get('添付書類の名称', '—'))
-        st.write("**総手続件数:**", r.get('総手続件数', '—'))
-        st.write("**オンライン手続件数:**", r.get('オンライン手続件数', '—'))
-        st.write("**非オンライン手続件数:**", r.get('非オンライン手続件数', '—'))
-        
-        # 全データを表形式で表示
-        all_data = pd.DataFrame([r]).T
-        all_data.columns = ['値']
-        st.dataframe(all_data, use_container_width=True)
+        st.write("**法令名:**", r.get('法令名', '—'))
+        st.write("**法令番号:**", r.get('法令番号', '—'))
+        st.write("**根拠条項号:**", r.get('根拠条項号', '—'))
+        if pd.notna(r.get('実施府省庁')):
+            st.write("**実施府省庁:**", r.get('実施府省庁', '—'))
+
+    with tab3:
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.markdown("#### オンライン化状況")
+            st.write("**オンライン化の実施状況:**", _normalize_label('オンライン化の実施状況', r.get('オンライン化の実施状況', '—')))
+            st.write("**オンライン化実施時期:**", r.get('オンライン化実施時期', '—'))
+            if pd.notna(r.get('オンライン化の実施予定及び検討時の懸念点')):
+                st.write("**実施予定・懸念点:**", r.get('オンライン化の実施予定及び検討時の懸念点', '—'))
+        with col_right:
+            st.markdown("#### システム情報")
+            st.write("**申請システム:**", r.get('情報システム(申請)', '—'))
+            st.write("**事務処理システム:**", r.get('情報システム(事務処理)', '—'))
+            st.write("**処理期間(オンライン):**", r.get('処理期間(オンライン)', '—'))
+            st.write("**処理期間(非オンライン):**", r.get('処理期間(非オンライン)', '—'))
+
+    with tab4:
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.markdown("#### 申請情報")
+            st.write("**本人確認手法:**", r.get('申請等における本人確認手法', '—'))
+            st.write("**提出先機関:**", r.get('申請を提出する機関', '—'))
+            st.write("**手数料納付有無:**", r.get('手数料等の納付有無', '—'))
+            st.write("**納付方法:**", r.get('手数料等の納付方法', '—'))
+            st.write("**優遇措置:**", r.get('手数料等のオンライン納付時の優遇措置', '—'))
+        with col_right:
+            st.markdown("#### 書類情報")
+            if pd.notna(r.get('申請書等に記載させる情報')):
+                st.info(f"**記載情報:** {r.get('申請書等に記載させる情報', '—')}")
+            if pd.notna(r.get('申請時に添付させる書類')):
+                st.info(f"**添付書類:** {r.get('申請時に添付させる書類', '—')}")
+            st.write("**添付書類提出方法:**", r.get('添付書類等の提出方法', '—'))
+            st.write("**電子署名:**", r.get('添付書類等への電子署名', '—'))
+            st.write("**撤廃/省略状況:**", r.get('添付書類等提出の撤廃/省略状況', '—'))
+
+    with tab5:
+        if pd.notna(r.get('手続が行われるイベント(個人)')):
+            st.markdown("**個人ライフイベント:**")
+            st.info(r.get('手続が行われるイベント(個人)', '—'))
+
+        if pd.notna(r.get('手続が行われるイベント(法人)')):
+            st.markdown("**法人ライフイベント:**")
+            st.info(r.get('手続が行われるイベント(法人)', '—'))
+
+        if pd.notna(r.get('申請に関連する士業')):
+            st.markdown("**関連士業:**")
+            st.info(r.get('申請に関連する士業', '—'))
+
+    with tab6:
+        # 重要な項目を先頭に配置
+        important_cols = ['手続ID', '手続名', '法令名', '所管府省庁', 'オンライン化の実施状況']
+        other_cols = [c for c in COLUMNS if c not in important_cols]
+        ordered_cols = important_cols + other_cols
+
+        data_dict = {}
+        for col in ordered_cols:
+            if col in r:
+                value = r[col]
+                if pd.notna(value) and str(value).strip():
+                    data_dict[col] = str(value)
+                else:
+                    data_dict[col] = '—'
+
+        display_df = pd.DataFrame.from_dict(data_dict, orient='index', columns=['値'])
+        display_df.index.name = '項目名'
+        st.dataframe(display_df, use_container_width=True, height=400)
+
+    # CSVエクスポート
+    st.divider()
+    csv_data = df_to_csv_bytes(pd.DataFrame([r]))
+    st.download_button(
+        label=":material/download: この手続の情報をCSVでダウンロード",
+        data=csv_data,
+        file_name=f"procedure_{procedure_id}.csv",
+        mime="text/csv"
+    )
 
 # ---- Sankeyラベル改行ヘルパ ----
 def _wrap_label(text: Any, width: int = 10, max_lines: int = 3) -> str:
@@ -518,7 +609,7 @@ def _render_procedure_detail(proc_id: str, df: pd.DataFrame):
     st.caption(f"手続ID: {r.get('手続ID','')} | 所管府省庁: {r.get('所管府省庁','')}")
     
     # 主要指標を上部に表示
-    st.markdown("### 📊 主要指標")
+    st.markdown("### :material/insights: 主要指標")
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("手続ID", r.get('手続ID', '—'))
@@ -540,7 +631,7 @@ def _render_procedure_detail(proc_id: str, df: pd.DataFrame):
     
     with col_left:
         # 基本情報
-        with st.expander("🏛️ **基本情報**", expanded=True):
+        with st.expander(":material/info: **基本情報**", expanded=True):
             items = [
                 ("所管府省庁", r.get('所管府省庁', '—')),
                 ("手続名", r.get('手続名', '—')),
@@ -559,7 +650,7 @@ def _render_procedure_detail(proc_id: str, df: pd.DataFrame):
                     st.text(value if value else '—')
         
         # 法令情報
-        with st.expander("⚖️ **法令情報**", expanded=True):
+        with st.expander(":material/gavel: **法令情報**", expanded=True):
             items = [
                 ("法令名", r.get('法令名', '—')),
                 ("法令番号", r.get('法令番号', '—')),
@@ -573,7 +664,7 @@ def _render_procedure_detail(proc_id: str, df: pd.DataFrame):
                     st.text(value if value else '—')
         
         # システム情報
-        with st.expander("💻 **システム情報**", expanded=True):
+        with st.expander(":material/computer: **システム情報**", expanded=True):
             items = [
                 ("申請システム", r.get('情報システム(申請)', '—')),
                 ("事務処理システム", r.get('情報システム(事務処理)', '—')),
@@ -589,7 +680,7 @@ def _render_procedure_detail(proc_id: str, df: pd.DataFrame):
     
     with col_right:
         # 申請・書類情報
-        with st.expander("📝 **申請・書類情報**", expanded=True):
+        with st.expander(":material/description: **申請・書類情報**", expanded=True):
             items = [
                 ("本人確認手法", r.get('申請等における本人確認手法', '—')),
                 ("提出先機関", r.get('申請を提出する機関', '—')),
@@ -611,7 +702,7 @@ def _render_procedure_detail(proc_id: str, df: pd.DataFrame):
                 st.info(r.get('申請時に添付させる書類', '—'))
         
         # 手数料情報
-        with st.expander("💰 **手数料情報**", expanded=True):
+        with st.expander(":material/payments: **手数料情報**", expanded=True):
             items = [
                 ("納付有無", r.get('手数料等の納付有無', '—')),
                 ("納付方法", r.get('手数料等の納付方法', '—')),
@@ -625,7 +716,7 @@ def _render_procedure_detail(proc_id: str, df: pd.DataFrame):
                     st.text(value if value else '—')
         
         # ライフイベント・士業
-        with st.expander("🌟 **ライフイベント・士業**", expanded=True):
+        with st.expander(":material/event: **ライフイベント・士業**", expanded=True):
             if pd.notna(r.get('手続が行われるイベント(個人)')):
                 st.markdown("**個人ライフイベント:**")
                 st.info(r.get('手続が行われるイベント(個人)', '—'))
@@ -639,7 +730,7 @@ def _render_procedure_detail(proc_id: str, df: pd.DataFrame):
                 st.info(r.get('申請に関連する士業', '—'))
     
     # 全項目データ（折りたたみ）
-    with st.expander("📋 **全38項目の詳細データ**", expanded=False):
+    with st.expander(":material/list_alt: **全38項目の詳細データ**", expanded=False):
         # 重要な項目を先頭に配置
         important_cols = ['手続ID', '手続名', '法令名', '所管府省庁', 'オンライン化の実施状況']
         other_cols = [c for c in COLUMNS if c not in important_cols]
@@ -662,7 +753,7 @@ def _render_procedure_detail(proc_id: str, df: pd.DataFrame):
     st.divider()
     csv_data = df_to_csv_bytes(pd.DataFrame([r]))
     st.download_button(
-        label="📥 この手続の情報をCSVでダウンロード",
+        label=":material/download: この手続の情報をCSVでダウンロード",
         data=csv_data,
         file_name=f"procedure_{proc_id}.csv",
         mime="text/csv"
@@ -695,10 +786,10 @@ def main():
     
     # タイトル（モバイルでは省略）
     if is_mobile:
-        st.title("⚖️ 行政手続DB")
+        st.title(":material/gavel: 行政手続DB")
         st.caption("約75,000件の法令・手続データ")
     else:
-        st.title("⚖️ 日本の法令に基づく行政手続等オンライン化状況ダッシュボード")
+        st.title(":material/gavel: 日本の法令に基づく行政手続等オンライン化状況ダッシュボード")
         st.markdown("約75,000件の法令・行政手続データを可視化・分析")
     
     # データ読み込み（初回のみ）
@@ -710,10 +801,10 @@ def main():
 
     # サイドバー
     with st.sidebar:
-        st.header("📋 フィルター設定")
+        st.header(":material/filter_list: フィルター設定")
 
         # ============ 検索機能 ============
-        st.markdown("### 🔍 検索")
+        st.markdown("### :material/search: 検索")
 
         # 統合検索ボックス
         search_query = st.text_input(
@@ -891,7 +982,7 @@ def main():
     # ============ メインコンテンツ ============
 
     # 概要統計
-    st.header("📊 概要統計")
+    st.header(":material/analytics: 概要統計")
 
     # KPIカード（カラムの存在を確認しつつ安全に算出）
     col1, col2, col3, col4 = st.columns(4)
@@ -958,10 +1049,10 @@ def main():
         else:
             st.info("該当するデータがありません（棒グラフ）")
 
-    st.header("🏢 府省庁別分析")
+    st.header(":material/account_balance: 府省庁別分析")
 
     # 府省庁別のオンライン化状況で積み上げ棒グラフ
-    st.subheader("📊 府省庁別手続数（オンライン化状況別）")
+    st.subheader(":material/bar_chart: 府省庁別手続数（オンライン化状況別）")
 
     # 府省庁別・オンライン化状況別の集計
     ministry_online_df = filtered_df.groupby(['所管府省庁', 'オンライン化の実施状況']).size().reset_index(name='手続数')
@@ -1011,7 +1102,7 @@ def main():
     ministry_stats = ministry_stats.sort_values('オンライン化率', ascending=False).head(20)
 
     # 手続主体×受け手の組み合わせ分析
-    st.header("🤝 手続主体×受け手の組み合わせ分析")
+    st.header(":material/compare_arrows: 手続主体×受け手の組み合わせ分析")
     st.caption("どの主体からどの受け手への手続が多いかをマトリックス形式で分析します。")
 
     if '手続主体' in filtered_df.columns and '手続の受け手' in filtered_df.columns:
@@ -1040,7 +1131,7 @@ def main():
         st.warning("手続主体または手続の受け手のデータが存在しません")
 
     # 法令別分析
-    st.header("⚖️ 法令別分析")
+    st.header(":material/gavel: 法令別分析")
 
     # 法律、政令、省令などの分類関数
     def classify_law_type(law_number):
@@ -1064,7 +1155,7 @@ def main():
 
     # 法令種別の分析（左側）
     with col1:
-        st.subheader("📊 法令種別の分布")
+        st.subheader(":material/pie_chart: 法令種別の分布")
         # in-place 追加は避け、一時DataFrameに列を付与
         law_type_series = filtered_df['法令番号'].apply(classify_law_type) if '法令番号' in filtered_df.columns else pd.Series([], dtype='object')
         tmp_df = filtered_df.assign(法令種別=law_type_series)
@@ -1082,7 +1173,7 @@ def main():
 
     # 法令別の手続数（右側）
     with col2:
-        st.subheader("📚 法令別手続数")
+        st.subheader(":material/book: 法令別手続数")
         law_counts = filtered_df['法令名'].value_counts()
         if len(law_counts) > 0:
             # グラフ表示用に上位20件を取得して降順にソート
@@ -1120,14 +1211,14 @@ def main():
         })
     law_online_df = pd.DataFrame(law_online_data)
 
-    st.header("💻 申請システム分析")
+    st.header(":material/computer: 申請システム分析")
     st.caption("申請システムと事務処理システムの利用状況を分析します。")
 
     col1, col2 = st.columns(2)
 
     # 申請システム（申請）の分析
     with col1:
-        st.subheader("📊 申請システムの利用状況")
+        st.subheader(":material/insights: 申請システムの利用状況")
 
         # 申請システムのデータを集計
         system_df = filtered_df[filtered_df['情報システム(申請)'].notna()].copy()
@@ -1177,7 +1268,7 @@ def main():
 
     # 事務処理システムの分析
     with col2:
-        st.subheader("🖥️ 事務処理システムの利用状況")
+        st.subheader(":material/desktop_windows: 事務処理システムの利用状況")
 
         # 事務処理システムのデータを集計
         process_system_df = filtered_df[filtered_df['情報システム(事務処理)'].notna()].copy()
@@ -1213,7 +1304,7 @@ def main():
             st.info("事務処理システムのデータがありません")
     
         # 申請システムと事務処理システムの組み合わせ分析
-    st.header("📝 申請文書分析")
+    st.header(":material/description: 申請文書分析")
     st.caption("添付書類や提出方式・電子署名の分布、手続類型との関係を分析します。")
 
     att_col = '申請時に添付させる書類'
@@ -1263,7 +1354,7 @@ def main():
         st.divider()
 
         # --- 中段：申請書記載情報と添付書類 ---
-        st.subheader("📝 申請書類の記載情報と添付書類")
+        st.subheader(":material/article: 申請書類の記載情報と添付書類")
 
         col1, col2 = st.columns(2)
 
@@ -1292,7 +1383,7 @@ def main():
                     fig_info.update_layout(margin=dict(l=0, r=0, t=40, b=0), height=600)
                     st.plotly_chart(fig_info, use_container_width=True)
                     del fig_info
-                    with st.expander("📥 集計CSVをダウンロード（全件）"):
+                    with st.expander(":material/download: 集計CSVをダウンロード（全件）"):
                         st.download_button("記載情報全件のCSV", df_to_csv_bytes(info_df), file_name="application_info_all.csv", mime="text/csv", key="info_csv")
                 else:
                     st.info("申請書等に記載させる情報の値が見つかりません")
@@ -1322,7 +1413,7 @@ def main():
                     fig_att.update_layout(margin=dict(l=0, r=0, t=40, b=0), height=600)
                     st.plotly_chart(fig_att, use_container_width=True)
                     del fig_att
-                    with st.expander("📥 集計CSVをダウンロード（全件）"):
+                    with st.expander(":material/download: 集計CSVをダウンロード（全件）"):
                         st.download_button("添付書類全件のCSV", df_to_csv_bytes(att_df), file_name="attachment_all.csv", mime="text/csv", key="att_csv")
                 else:
                     st.info("添付書類の値が見つかりません")
@@ -1332,14 +1423,14 @@ def main():
         st.divider()
 
     # ライフイベント分析
-    st.header("🌟 ライフイベント分析")
+    st.header(":material/event: ライフイベント分析")
     st.caption("個人および法人のライフイベントごとの手続数を分析します。")
 
     col1, col2 = st.columns(2)
 
     # 個人ライフイベント
     with col1:
-        st.subheader("👤 個人ライフイベント")
+        st.subheader(":material/person: 個人ライフイベント")
         if '手続が行われるイベント(個人)' in filtered_df.columns:
             # マルチバリュー対応（カンマ区切り等）
             personal_events = filtered_df['手続が行われるイベント(個人)'].dropna().apply(_split_multi_values).explode()
@@ -1368,7 +1459,7 @@ def main():
 
     # 法人ライフイベント
     with col2:
-        st.subheader("🏢 法人ライフイベント")
+        st.subheader(":material/business: 法人ライフイベント")
         if '手続が行われるイベント(法人)' in filtered_df.columns:
             # マルチバリュー対応（カンマ区切り等）
             corporate_events = filtered_df['手続が行われるイベント(法人)'].dropna().apply(_split_multi_values).explode()
@@ -1398,14 +1489,14 @@ def main():
     st.divider()
 
     # 士業・提出機関分析
-    st.header("🏛️ 申請関連分析")
+    st.header(":material/domain: 申請関連分析")
     st.caption("代理申請が可能な士業と申請の提出先機関の分布を分析します。")
 
     col1, col2 = st.columns(2)
 
     # 士業分析（左側）
     with col1:
-        st.subheader("⚖️ 申請に関連する士業")
+        st.subheader(":material/work: 申請に関連する士業")
         if '申請に関連する士業' in filtered_df.columns:
             # マルチバリュー対応（カンマ区切り等）
             professionals = filtered_df['申請に関連する士業'].dropna().apply(_split_multi_values).explode()
@@ -1434,7 +1525,7 @@ def main():
 
     # 提出機関分析（右側）
     with col2:
-        st.subheader("🏢 申請を提出する機関")
+        st.subheader(":material/location_city: 申請を提出する機関")
         if '申請を提出する機関' in filtered_df.columns:
             # マルチバリュー対応（セミコロン区切り等）
             submit_orgs = filtered_df['申請を提出する機関'].dropna().astype(str)
@@ -1467,7 +1558,7 @@ def main():
     st.divider()
 
     # 手続一覧の表示（最後に配置）
-    st.header("📋 手続一覧")
+    st.header(":material/list: 手続一覧")
 
     # 全ての列を表示
     # 選択可能なデータフレームを表示
@@ -1480,22 +1571,147 @@ def main():
         key="procedure_list_table"
     )
 
-    # 選択された行がある場合、詳細をモーダルで表示
-    if event.selection and event.selection.rows:
-        selected_idx = event.selection.rows[0]
-        selected_proc = filtered_df.iloc[selected_idx]
-
-        # 詳細をモーダルで表示（自動的に開く）
-        show_procedure_detail(selected_proc['手続ID'], df)
-
     # CSVダウンロードボタン（全項目）
     csv_data = df_to_csv_bytes(filtered_df)
     st.download_button(
-        label="📥 手続一覧をCSVダウンロード",
+        label=":material/download: 手続一覧をCSVダウンロード",
         data=csv_data,
         file_name="procedures_list.csv",
         mime="text/csv"
     )
+
+    # 選択された行がある場合、詳細を下に表示
+    if event.selection and event.selection.rows:
+        selected_idx = event.selection.rows[0]
+        selected_proc = filtered_df.iloc[selected_idx]
+
+        st.divider()
+
+        # 詳細情報を表示（メインエリアに直接表示）
+        r = selected_proc.to_dict()
+
+        # タイトル部
+        st.title(f":material/description: {r.get('手続名', '')}")
+        st.caption(f"手続ID: {r.get('手続ID','')} | 所管府省庁: {r.get('所管府省庁','')}")
+
+        # 主要指標を上部に表示
+        st.markdown("### :material/insights: 主要指標")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("手続ID", r.get('手続ID', '—'))
+        with col2:
+            status = _normalize_label('オンライン化の実施状況', r.get('オンライン化の実施状況', ''))
+            st.metric("オンライン化状況", status if status else "—")
+        with col3:
+            st.metric("総手続件数", f"{int(r.get('総手続件数', 0) or 0):,}")
+        with col4:
+            st.metric("オンライン手続件数", f"{int(r.get('オンライン手続件数', 0) or 0):,}")
+        with col5:
+            rate = float(r.get('オンライン化率', 0) or 0)
+            st.metric("オンライン化率", f"{rate:.1f}%")
+
+        st.divider()
+
+        # タブで情報を整理
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["基本情報", "法令情報", "オンライン化", "申請・書類", "ライフイベント", "全データ"])
+
+        with tab1:
+            col_left, col_right = st.columns(2)
+            with col_left:
+                st.markdown("#### 基本情報")
+                st.write("**所管府省庁:**", r.get('所管府省庁', '—'))
+                st.write("**手続名:**", r.get('手続名', '—'))
+                st.write("**手続類型:**", _normalize_label('手続類型', r.get('手続類型', '—')))
+                st.write("**手続主体:**", r.get('手続主体', '—'))
+            with col_right:
+                st.markdown("#### 実施情報")
+                st.write("**手続の受け手:**", r.get('手続の受け手', '—'))
+                st.write("**経由機関:**", r.get('経由機関', '—'))
+                st.write("**事務区分:**", r.get('事務区分', '—'))
+                st.write("**府省共通手続:**", r.get('府省共通手続', '—'))
+
+        with tab2:
+            st.write("**法令名:**", r.get('法令名', '—'))
+            st.write("**法令番号:**", r.get('法令番号', '—'))
+            st.write("**根拠条項号:**", r.get('根拠条項号', '—'))
+            if pd.notna(r.get('実施府省庁')):
+                st.write("**実施府省庁:**", r.get('実施府省庁', '—'))
+
+        with tab3:
+            col_left, col_right = st.columns(2)
+            with col_left:
+                st.markdown("#### オンライン化状況")
+                st.write("**オンライン化の実施状況:**", _normalize_label('オンライン化の実施状況', r.get('オンライン化の実施状況', '—')))
+                st.write("**オンライン化実施時期:**", r.get('オンライン化実施時期', '—'))
+                if pd.notna(r.get('オンライン化の実施予定及び検討時の懸念点')):
+                    st.write("**実施予定・懸念点:**", r.get('オンライン化の実施予定及び検討時の懸念点', '—'))
+            with col_right:
+                st.markdown("#### システム情報")
+                st.write("**申請システム:**", r.get('情報システム(申請)', '—'))
+                st.write("**事務処理システム:**", r.get('情報システム(事務処理)', '—'))
+                st.write("**処理期間(オンライン):**", r.get('処理期間(オンライン)', '—'))
+                st.write("**処理期間(非オンライン):**", r.get('処理期間(非オンライン)', '—'))
+
+        with tab4:
+            col_left, col_right = st.columns(2)
+            with col_left:
+                st.markdown("#### 申請情報")
+                st.write("**本人確認手法:**", r.get('申請等における本人確認手法', '—'))
+                st.write("**提出先機関:**", r.get('申請を提出する機関', '—'))
+                st.write("**手数料納付有無:**", r.get('手数料等の納付有無', '—'))
+                st.write("**納付方法:**", r.get('手数料等の納付方法', '—'))
+                st.write("**優遇措置:**", r.get('手数料等のオンライン納付時の優遇措置', '—'))
+            with col_right:
+                st.markdown("#### 書類情報")
+                if pd.notna(r.get('申請書等に記載させる情報')):
+                    st.info(f"**記載情報:** {r.get('申請書等に記載させる情報', '—')}")
+                if pd.notna(r.get('申請時に添付させる書類')):
+                    st.info(f"**添付書類:** {r.get('申請時に添付させる書類', '—')}")
+                st.write("**添付書類提出方法:**", r.get('添付書類等の提出方法', '—'))
+                st.write("**電子署名:**", r.get('添付書類等への電子署名', '—'))
+                st.write("**撤廃/省略状況:**", r.get('添付書類等提出の撤廃/省略状況', '—'))
+
+        with tab5:
+            if pd.notna(r.get('手続が行われるイベント(個人)')):
+                st.markdown("**個人ライフイベント:**")
+                st.info(r.get('手続が行われるイベント(個人)', '—'))
+
+            if pd.notna(r.get('手続が行われるイベント(法人)')):
+                st.markdown("**法人ライフイベント:**")
+                st.info(r.get('手続が行われるイベント(法人)', '—'))
+
+            if pd.notna(r.get('申請に関連する士業')):
+                st.markdown("**関連士業:**")
+                st.info(r.get('申請に関連する士業', '—'))
+
+        with tab6:
+            # 重要な項目を先頭に配置
+            important_cols = ['手続ID', '手続名', '法令名', '所管府省庁', 'オンライン化の実施状況']
+            other_cols = [c for c in COLUMNS if c not in important_cols]
+            ordered_cols = important_cols + other_cols
+
+            data_dict = {}
+            for col in ordered_cols:
+                if col in r:
+                    value = r[col]
+                    if pd.notna(value) and str(value).strip():
+                        data_dict[col] = str(value)
+                    else:
+                        data_dict[col] = '—'
+
+            display_df = pd.DataFrame.from_dict(data_dict, orient='index', columns=['値'])
+            display_df.index.name = '項目名'
+            st.dataframe(display_df, use_container_width=True, height=400)
+
+        # 個別CSVエクスポート
+        st.divider()
+        procedure_csv_data = df_to_csv_bytes(pd.DataFrame([r]))
+        st.download_button(
+            label=":material/download: この手続の情報をCSVでダウンロード",
+            data=procedure_csv_data,
+            file_name=f"procedure_{r.get('手続ID', 'unknown')}.csv",
+            mime="text/csv"
+        )
 
 if __name__ == "__main__":
     main()
