@@ -1571,6 +1571,14 @@ def main():
         key="procedure_list_table"
     )
 
+    # 選択された行がある場合、詳細をモーダルで表示
+    if event.selection and event.selection.rows:
+        selected_idx = event.selection.rows[0]
+        selected_proc = filtered_df.iloc[selected_idx]
+
+        # 詳細をモーダルダイアログで表示
+        show_procedure_detail(selected_proc['手続ID'], df)
+
     # CSVダウンロードボタン（全項目）
     csv_data = df_to_csv_bytes(filtered_df)
     st.download_button(
@@ -1579,139 +1587,6 @@ def main():
         file_name="procedures_list.csv",
         mime="text/csv"
     )
-
-    # 選択された行がある場合、詳細を下に表示
-    if event.selection and event.selection.rows:
-        selected_idx = event.selection.rows[0]
-        selected_proc = filtered_df.iloc[selected_idx]
-
-        st.divider()
-
-        # 詳細情報を表示（メインエリアに直接表示）
-        r = selected_proc.to_dict()
-
-        # タイトル部
-        st.title(f":material/description: {r.get('手続名', '')}")
-        st.caption(f"手続ID: {r.get('手続ID','')} | 所管府省庁: {r.get('所管府省庁','')}")
-
-        # 主要指標を上部に表示
-        st.markdown("### :material/insights: 主要指標")
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1:
-            st.metric("手続ID", r.get('手続ID', '—'))
-        with col2:
-            status = _normalize_label('オンライン化の実施状況', r.get('オンライン化の実施状況', ''))
-            st.metric("オンライン化状況", status if status else "—")
-        with col3:
-            st.metric("総手続件数", f"{int(r.get('総手続件数', 0) or 0):,}")
-        with col4:
-            st.metric("オンライン手続件数", f"{int(r.get('オンライン手続件数', 0) or 0):,}")
-        with col5:
-            rate = float(r.get('オンライン化率', 0) or 0)
-            st.metric("オンライン化率", f"{rate:.1f}%")
-
-        st.divider()
-
-        # タブで情報を整理
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["基本情報", "法令情報", "オンライン化", "申請・書類", "ライフイベント", "全データ"])
-
-        with tab1:
-            col_left, col_right = st.columns(2)
-            with col_left:
-                st.markdown("#### 基本情報")
-                st.write("**所管府省庁:**", r.get('所管府省庁', '—'))
-                st.write("**手続名:**", r.get('手続名', '—'))
-                st.write("**手続類型:**", _normalize_label('手続類型', r.get('手続類型', '—')))
-                st.write("**手続主体:**", r.get('手続主体', '—'))
-            with col_right:
-                st.markdown("#### 実施情報")
-                st.write("**手続の受け手:**", r.get('手続の受け手', '—'))
-                st.write("**経由機関:**", r.get('経由機関', '—'))
-                st.write("**事務区分:**", r.get('事務区分', '—'))
-                st.write("**府省共通手続:**", r.get('府省共通手続', '—'))
-
-        with tab2:
-            st.write("**法令名:**", r.get('法令名', '—'))
-            st.write("**法令番号:**", r.get('法令番号', '—'))
-            st.write("**根拠条項号:**", r.get('根拠条項号', '—'))
-            if pd.notna(r.get('実施府省庁')):
-                st.write("**実施府省庁:**", r.get('実施府省庁', '—'))
-
-        with tab3:
-            col_left, col_right = st.columns(2)
-            with col_left:
-                st.markdown("#### オンライン化状況")
-                st.write("**オンライン化の実施状況:**", _normalize_label('オンライン化の実施状況', r.get('オンライン化の実施状況', '—')))
-                st.write("**オンライン化実施時期:**", r.get('オンライン化実施時期', '—'))
-                if pd.notna(r.get('オンライン化の実施予定及び検討時の懸念点')):
-                    st.write("**実施予定・懸念点:**", r.get('オンライン化の実施予定及び検討時の懸念点', '—'))
-            with col_right:
-                st.markdown("#### システム情報")
-                st.write("**申請システム:**", r.get('情報システム(申請)', '—'))
-                st.write("**事務処理システム:**", r.get('情報システム(事務処理)', '—'))
-                st.write("**処理期間(オンライン):**", r.get('処理期間(オンライン)', '—'))
-                st.write("**処理期間(非オンライン):**", r.get('処理期間(非オンライン)', '—'))
-
-        with tab4:
-            col_left, col_right = st.columns(2)
-            with col_left:
-                st.markdown("#### 申請情報")
-                st.write("**本人確認手法:**", r.get('申請等における本人確認手法', '—'))
-                st.write("**提出先機関:**", r.get('申請を提出する機関', '—'))
-                st.write("**手数料納付有無:**", r.get('手数料等の納付有無', '—'))
-                st.write("**納付方法:**", r.get('手数料等の納付方法', '—'))
-                st.write("**優遇措置:**", r.get('手数料等のオンライン納付時の優遇措置', '—'))
-            with col_right:
-                st.markdown("#### 書類情報")
-                if pd.notna(r.get('申請書等に記載させる情報')):
-                    st.info(f"**記載情報:** {r.get('申請書等に記載させる情報', '—')}")
-                if pd.notna(r.get('申請時に添付させる書類')):
-                    st.info(f"**添付書類:** {r.get('申請時に添付させる書類', '—')}")
-                st.write("**添付書類提出方法:**", r.get('添付書類等の提出方法', '—'))
-                st.write("**電子署名:**", r.get('添付書類等への電子署名', '—'))
-                st.write("**撤廃/省略状況:**", r.get('添付書類等提出の撤廃/省略状況', '—'))
-
-        with tab5:
-            if pd.notna(r.get('手続が行われるイベント(個人)')):
-                st.markdown("**個人ライフイベント:**")
-                st.info(r.get('手続が行われるイベント(個人)', '—'))
-
-            if pd.notna(r.get('手続が行われるイベント(法人)')):
-                st.markdown("**法人ライフイベント:**")
-                st.info(r.get('手続が行われるイベント(法人)', '—'))
-
-            if pd.notna(r.get('申請に関連する士業')):
-                st.markdown("**関連士業:**")
-                st.info(r.get('申請に関連する士業', '—'))
-
-        with tab6:
-            # 重要な項目を先頭に配置
-            important_cols = ['手続ID', '手続名', '法令名', '所管府省庁', 'オンライン化の実施状況']
-            other_cols = [c for c in COLUMNS if c not in important_cols]
-            ordered_cols = important_cols + other_cols
-
-            data_dict = {}
-            for col in ordered_cols:
-                if col in r:
-                    value = r[col]
-                    if pd.notna(value) and str(value).strip():
-                        data_dict[col] = str(value)
-                    else:
-                        data_dict[col] = '—'
-
-            display_df = pd.DataFrame.from_dict(data_dict, orient='index', columns=['値'])
-            display_df.index.name = '項目名'
-            st.dataframe(display_df, use_container_width=True, height=400)
-
-        # 個別CSVエクスポート
-        st.divider()
-        procedure_csv_data = df_to_csv_bytes(pd.DataFrame([r]))
-        st.download_button(
-            label=":material/download: この手続の情報をCSVでダウンロード",
-            data=procedure_csv_data,
-            file_name=f"procedure_{r.get('手続ID', 'unknown')}.csv",
-            mime="text/csv"
-        )
 
 if __name__ == "__main__":
     main()
