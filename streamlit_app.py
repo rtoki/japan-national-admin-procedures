@@ -1156,10 +1156,12 @@ def main():
     # 法令種別の分析（左側）
     with col1:
         st.subheader(":material/pie_chart: 法令種別の分布")
-        # in-place 追加は避け、一時DataFrameに列を付与
-        law_type_series = filtered_df['法令番号'].apply(classify_law_type) if '法令番号' in filtered_df.columns else pd.Series([], dtype='object')
-        tmp_df = filtered_df.assign(法令種別=law_type_series)
-        law_type_counts = tmp_df['法令種別'].value_counts()
+        # in-place 追加ではなく、派生列のみを集計
+        if '法令番号' in filtered_df.columns:
+            law_type_series = filtered_df['法令番号'].apply(classify_law_type)
+            law_type_counts = law_type_series.value_counts()
+        else:
+            law_type_counts = pd.Series(dtype='int64')
 
         fig_law_type = px.pie(
             values=law_type_counts.values,
@@ -1220,88 +1222,99 @@ def main():
     with col1:
         st.subheader(":material/insights: 申請システムの利用状況")
 
-        # 申請システムのデータを集計
-        system_df = filtered_df[filtered_df['情報システム(申請)'].notna()].copy()
-
-        if len(system_df) > 0:
-            # セミコロン区切りの複数選択を分解して集計
-            systems = system_df['情報システム(申請)'].str.split(';').explode()
-            systems = systems.str.strip()  # 前後の空白を削除
-            systems = systems[systems != '']  # 空文字を除外
-
-            # システム別の手続数を集計
-            system_counts = systems.value_counts()
-            # グラフ表示用に上位30件を取得して降順にソート
-            system_counts_display = system_counts.head(30).sort_values(ascending=True)
-
-            # ラベルを省略処理（長い場合は...で省略）
-            truncated_labels = [label[:25] + '...' if len(label) > 25 else label for label in system_counts_display.index]
-
-            # 申請システム別手続数の棒グラフ
-            fig_system = px.bar(
-                x=system_counts_display.values,
-                y=truncated_labels,
-                orientation='h',
-                title="申請システム別手続数",
-                labels={'x': '手続数', 'y': '申請システム'},
-                text_auto=True,
-                hover_data={'y': system_counts_display.index}  # ホバー時に完全なラベルを表示
-            )
-            fig_system.update_layout(height=600)
-            st.plotly_chart(fig_system, use_container_width=True)
-            del fig_system
-
-            # システム別のオンライン化率
-            system_stats = system_df.groupby('情報システム(申請)').agg({
-                '手続ID': 'count',
-                '総手続件数': 'sum',
-                'オンライン手続件数': 'sum'
-            }).reset_index()
-            system_stats.columns = ['申請システム', '手続数', '総手続件数', 'オンライン手続件数']
-            system_stats['オンライン化率'] = (
-                system_stats['オンライン手続件数'] / system_stats['総手続件数'] * 100
-            ).round(2)
-            system_stats = system_stats[system_stats['総手続件数'] > 0]
-            system_stats = system_stats.sort_values('オンライン化率', ascending=False).head(20)
+        if '情報システム(申請)' not in filtered_df.columns:
+            st.warning("申請システムの列が存在しません")
         else:
-            st.info("申請システムのデータがありません")
+            system_mask = filtered_df['情報システム(申請)'].notna()
+            if system_mask.any():
+                system_series = filtered_df.loc[system_mask, '情報システム(申請)'].astype(str)
+                # セミコロン区切りの複数選択を分解して集計
+                systems = system_series.str.split(';').explode().str.strip()
+                systems = systems[systems != '']  # 空文字を除外
+
+                # システム別の手続数を集計
+                system_counts = systems.value_counts()
+                # グラフ表示用に上位30件を取得して降順にソート
+                system_counts_display = system_counts.head(30).sort_values(ascending=True)
+
+                # ラベルを省略処理（長い場合は...で省略）
+                truncated_labels = [label[:25] + '...' if len(label) > 25 else label for label in system_counts_display.index]
+
+                # 申請システム別手続数の棒グラフ
+                fig_system = px.bar(
+                    x=system_counts_display.values,
+                    y=truncated_labels,
+                    orientation='h',
+                    title="申請システム別手続数",
+                    labels={'x': '手続数', 'y': '申請システム'},
+                    text_auto=True,
+                    hover_data={'y': system_counts_display.index}  # ホバー時に完全なラベルを表示
+                )
+                fig_system.update_layout(height=600)
+                st.plotly_chart(fig_system, use_container_width=True)
+                del fig_system
+
+                # システム別のオンライン化率
+                stats_cols = ['情報システム(申請)', '手続ID', '総手続件数', 'オンライン手続件数']
+                stats_available = [c for c in stats_cols if c in filtered_df.columns]
+                if {'総手続件数', 'オンライン手続件数', '手続ID'}.issubset(stats_available):
+                    stats_df = filtered_df.loc[system_mask, stats_cols]
+                    system_stats = (
+                        stats_df.groupby('情報システム(申請)', observed=True)
+                        .agg(
+                            手続数=('手続ID', 'count'),
+                            総手続件数=('総手続件数', 'sum'),
+                            オンライン手続件数=('オンライン手続件数', 'sum')
+                        )
+                        .reset_index()
+                    )
+                    system_stats['オンライン化率'] = (
+                        system_stats['オンライン手続件数'] / system_stats['総手続件数'] * 100
+                    ).round(2)
+                    system_stats = system_stats[system_stats['総手続件数'] > 0]
+                    system_stats = system_stats.sort_values('オンライン化率', ascending=False).head(20)
+                else:
+                    st.info("オンライン化率を算出するための列が不足しています")
+            else:
+                st.info("申請システムのデータがありません")
 
     # 事務処理システムの分析
     with col2:
         st.subheader(":material/desktop_windows: 事務処理システムの利用状況")
 
-        # 事務処理システムのデータを集計
-        process_system_df = filtered_df[filtered_df['情報システム(事務処理)'].notna()].copy()
-
-        if len(process_system_df) > 0:
-            # セミコロン区切りの複数選択を分解して集計
-            process_systems = process_system_df['情報システム(事務処理)'].str.split(';').explode()
-            process_systems = process_systems.str.strip()  # 前後の空白を削除
-            process_systems = process_systems[process_systems != '']  # 空文字を除外
-
-            # システム別の手続数を集計
-            process_system_counts = process_systems.value_counts()
-            # グラフ表示用に上位30件を取得して降順にソート
-            process_system_counts_display = process_system_counts.head(30).sort_values(ascending=True)
-
-            # ラベルを省略処理（長い場合は...で省略）
-            truncated_labels = [label[:25] + '...' if len(label) > 25 else label for label in process_system_counts_display.index]
-
-            # 事務処理システム別手続数の棒グラフ
-            fig_process_system = px.bar(
-                x=process_system_counts_display.values,
-                y=truncated_labels,
-                orientation='h',
-                title="事務処理システム別手続数",
-                labels={'x': '手続数', 'y': '事務処理システム'},
-                text_auto=True,
-                hover_data={'y': process_system_counts_display.index}  # ホバー時に完全なラベルを表示
-            )
-            fig_process_system.update_layout(height=600)
-            st.plotly_chart(fig_process_system, use_container_width=True)
-            del fig_process_system
+        if '情報システム(事務処理)' not in filtered_df.columns:
+            st.warning("事務処理システムの列が存在しません")
         else:
-            st.info("事務処理システムのデータがありません")
+            process_mask = filtered_df['情報システム(事務処理)'].notna()
+            if process_mask.any():
+                process_series = filtered_df.loc[process_mask, '情報システム(事務処理)'].astype(str)
+                # セミコロン区切りの複数選択を分解して集計
+                process_systems = process_series.str.split(';').explode().str.strip()
+                process_systems = process_systems[process_systems != '']  # 空文字を除外
+
+                # システム別の手続数を集計
+                process_system_counts = process_systems.value_counts()
+                # グラフ表示用に上位30件を取得して降順にソート
+                process_system_counts_display = process_system_counts.head(30).sort_values(ascending=True)
+
+                # ラベルを省略処理（長い場合は...で省略）
+                truncated_labels = [label[:25] + '...' if len(label) > 25 else label for label in process_system_counts_display.index]
+
+                # 事務処理システム別手続数の棒グラフ
+                fig_process_system = px.bar(
+                    x=process_system_counts_display.values,
+                    y=truncated_labels,
+                    orientation='h',
+                    title="事務処理システム別手続数",
+                    labels={'x': '手続数', 'y': '事務処理システム'},
+                    text_auto=True,
+                    hover_data={'y': process_system_counts_display.index}  # ホバー時に完全なラベルを表示
+                )
+                fig_process_system.update_layout(height=600)
+                st.plotly_chart(fig_process_system, use_container_width=True)
+                del fig_process_system
+            else:
+                st.info("事務処理システムのデータがありません")
     
         # 申請システムと事務処理システムの組み合わせ分析
     st.header(":material/description: 申請文書分析")
@@ -1563,21 +1576,40 @@ def main():
     # 全ての列を表示
     # 選択可能なデータフレームを表示
     event = st.dataframe(
-        filtered_df.reset_index(drop=True),
+        filtered_df,
         use_container_width=True,
         height=400,
         selection_mode="single-row",
         on_select="rerun",
-        key="procedure_list_table"
+        key="procedure_list_table",
+        hide_index=True
     )
 
     # 選択された行がある場合、詳細をモーダルで表示
     if event.selection and event.selection.rows:
-        selected_idx = event.selection.rows[0]
-        selected_proc = filtered_df.iloc[selected_idx]
+        selected_key = event.selection.rows[0]
+        selected_proc = None
 
-        # 詳細をモーダルダイアログで表示
-        show_procedure_detail(selected_proc['手続ID'], df)
+        if isinstance(selected_key, (int, np.integer)):
+            if 0 <= selected_key < len(filtered_df):
+                selected_proc = filtered_df.iloc[selected_key]
+        else:
+            try:
+                pos_key = int(selected_key)
+            except (TypeError, ValueError):
+                if selected_key in filtered_df.index:
+                    selected_proc = filtered_df.loc[selected_key]
+            else:
+                if 0 <= pos_key < len(filtered_df):
+                    selected_proc = filtered_df.iloc[pos_key]
+
+        if selected_proc is not None and not isinstance(selected_proc, pd.Series):
+            # 重複インデックスの場合は先頭行を採用
+            selected_proc = selected_proc.iloc[0]
+
+        if selected_proc is not None and isinstance(selected_proc, pd.Series):
+            # 詳細をモーダルダイアログで表示
+            show_procedure_detail(selected_proc['手続ID'], df)
 
     # CSVダウンロードボタン（全項目）
     csv_data = df_to_csv_bytes(filtered_df)
