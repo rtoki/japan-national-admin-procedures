@@ -928,19 +928,10 @@ def main():
     # 手続一覧の表示
     st.subheader("📋 手続一覧")
 
-    # 表示する列を選択
-    display_columns = [
-        '手続ID', '手続名', '所管府省庁', '手続類型',
-        'オンライン化の実施状況', '総手続件数',
-        'オンライン手続件数', 'オンライン化率'
-    ]
-
-    # 存在する列のみ選択
-    available_columns = [col for col in display_columns if col in filtered_df.columns]
-
+    # 全ての列を表示
     # 選択可能なデータフレームを表示
     event = st.dataframe(
-        filtered_df[available_columns].reset_index(drop=True),
+        filtered_df.reset_index(drop=True),
         use_container_width=True,
         height=400,
         selection_mode="single-row",
@@ -956,8 +947,8 @@ def main():
         # 詳細をモーダルで表示（自動的に開く）
         show_procedure_detail(selected_proc['手続ID'], df)
 
-    # CSVダウンロードボタン
-    csv_data = df_to_csv_bytes(filtered_df[available_columns])
+    # CSVダウンロードボタン（全項目）
+    csv_data = df_to_csv_bytes(filtered_df)
     st.download_button(
         label="📥 手続一覧をCSVダウンロード",
         data=csv_data,
@@ -1007,12 +998,6 @@ def main():
         })
 
     law_online_df = pd.DataFrame(law_online_data)
-
-
-
-    # 法令別詳細テーブル
-    st.subheader("📋 法令別詳細統計")
-    st.dataframe(law_online_df.sort_values('オンライン化率', ascending=False), use_container_width=True)
 
     # 法令番号の形式別分析
     st.subheader("⚖️ 法令種別の分析")
@@ -1123,13 +1108,6 @@ def main():
     ministry_stats = ministry_stats.sort_values('オンライン化率', ascending=False).head(20)
 
 
-    # 府省庁別詳細テーブル
-    st.subheader("📋 府省庁別詳細統計")
-    st.dataframe(
-        ministry_stats.sort_values('オンライン化率', ascending=False),
-        use_container_width=True
-    )
-
     st.header("💻 申請システム分析")
 
     # 申請システム（申請）の分析
@@ -1169,15 +1147,6 @@ def main():
         ).round(2)
         system_stats = system_stats[system_stats['総手続件数'] > 0]
         system_stats = system_stats.sort_values('オンライン化率', ascending=False).head(20)
-    
-        # 散布図：システム別オンライン化率
-    
-        # システム別詳細テーブル
-        st.subheader("📋 申請システム別詳細統計")
-        st.dataframe(
-            system_stats[['申請システム', '手続数', '総手続件数', 'オンライン手続件数', 'オンライン化率']],
-            use_container_width=True
-        )
     else:
         st.info("申請システムのデータがありません")
 
@@ -1230,33 +1199,35 @@ def main():
             dist_cols.append((sign_col, '電子署名の要否の分布'))
 
         if dist_cols:
-            pie_top = st.slider("分布グラフのカテゴリ上限 (Top N)", 5, 15, 8, step=1, help="カテゴリが多い場合は上位のみ表示し、残りは『その他』にまとめます")
-            for cname, title_txt in dist_cols:
-                series = filtered_df[cname].dropna().astype(str)
-                series = series[series.str.strip() != '']
-                if len(series) > 0:
-                    dfv = _topn_with_other(series, top=pie_top, other_label='その他')
-                    dfv[cname] = dfv['label'].map(lambda s: _wrap_label(s, width=10, max_lines=2))
-                    fig = px.pie(dfv, values='件数', names=cname, title=title_txt, hole=0.4)
-                    fig.update_layout(
-                        margin=dict(l=0, r=0, t=40, b=0),
-                        height=400,
-                        legend=dict(font=dict(size=11), tracegroupgap=4)
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                    del fig
-                else:
-                    st.info(f"'{cname}' のデータがありません")
+            pie_top = 8  # 固定値に設定（スライダー削除）
+            cols = st.columns(len(dist_cols))
+            for idx, (cname, title_txt) in enumerate(dist_cols):
+                with cols[idx]:
+                    series = filtered_df[cname].dropna().astype(str)
+                    series = series[series.str.strip() != '']
+                    if len(series) > 0:
+                        dfv = _topn_with_other(series, top=pie_top, other_label='その他')
+                        dfv[cname] = dfv['label'].map(lambda s: _wrap_label(s, width=10, max_lines=2))
+                        fig = px.pie(dfv, values='件数', names=cname, title=title_txt, hole=0.4)
+                        fig.update_layout(
+                            margin=dict(l=0, r=0, t=40, b=0),
+                            height=400,
+                            legend=dict(font=dict(size=11), tracegroupgap=4)
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        del fig
+                    else:
+                        st.info(f"'{cname}' のデータがありません")
 
         st.divider()
 
         # --- 中段：添付書類トップ ---
-        st.subheader("📌 添付書類の頻出（TOP N）")
+        st.subheader("📌 添付書類の頻出（TOP20）")
         if att_col in filtered_df.columns:
             att_series = filtered_df[att_col].dropna().apply(_split_multi_values).explode().astype(str)
             att_series = att_series[att_series.str.strip() != '']
             if len(att_series) > 0:
-                top_k = st.slider("表示件数（添付書類TOP）", 10, 50, 20, step=5)
+                top_k = 20  # 固定値に設定（スライダー削除）
                 att_counts = att_series.value_counts().head(top_k)
                 att_df = att_counts.reset_index()
                 att_df.columns = ['添付書類', '件数']
