@@ -278,11 +278,8 @@ def load_data() -> pd.DataFrame:
 
     # Parquetファイルが存在しない場合はCSVから変換
     if not PARQUET_FILE.exists() and CSV_FILE.exists():
-        st.info("初回起動：CSVファイルをParquet形式に変換しています...")
-
         # チャンク読み込みでメモリピークを削減（最適化 4）
         chunks = []
-        total_rows = 0
 
         for chunk in pd.read_csv(
             CSV_FILE,
@@ -294,8 +291,6 @@ def load_data() -> pd.DataFrame:
             low_memory=False,
             chunksize=10000  # 10,000行ずつ処理
         ):
-            total_rows += len(chunk)
-
             # カテゴリ型に変換（最適化 1: 文字列を90%圧縮）
             categorical_cols = ['所管府省庁', '手続類型', '手続主体', '手続の受け手',
                               'オンライン化の実施状況', '事務区分', '府省共通手続']
@@ -326,7 +321,6 @@ def load_data() -> pd.DataFrame:
 
         # Parquetファイルとして保存
         df.to_parquet(PARQUET_FILE, engine='pyarrow', compression='zstd')  # zstd圧縮で効率化（pyarrow 21.0.0）
-        st.success(f"変換完了！{total_rows:,}件のデータを最適化しました。")
     
     # Parquetファイルから読み込み（超高速）
     df = pd.read_parquet(PARQUET_FILE, engine='pyarrow')
@@ -519,7 +513,7 @@ def main():
         st.markdown("### :material/search: 検索")
 
         # 統合検索ボックス
-        search_query = st.text_input(
+        st.text_input(
             "検索キーワード",
             placeholder="手続名、法令名、手続ID等を入力",
             key="unified_search",
@@ -890,15 +884,15 @@ def main():
         st.subheader(":material/book: 法令別手続数")
         law_counts = filtered_df['法令名'].value_counts()
         if len(law_counts) > 0:
-            # グラフ表示用に上位20件を取得して降順にソート
-            law_counts_display = law_counts.head(20).sort_values(ascending=True)
+            # グラフ表示用に上位15件を取得して降順にソート
+            law_counts_display = law_counts.head(15).sort_values(ascending=True)
             # ラベルを省略処理（長い場合は...で省略）
             truncated_labels = [label[:30] + '...' if len(label) > 30 else label for label in law_counts_display.index]
             fig_law = px.bar(
                 x=law_counts_display.values,
                 y=truncated_labels,
                 orientation='h',
-                title="法令別手続数（上位20件）",
+                title="法令別手続数（上位15件）",
                 labels={'x': '手続数', 'y': '法令名'},
                 hover_data={'y': law_counts_display.index},  # ホバー時に完全なラベルを表示
                 text_auto=True
@@ -909,21 +903,7 @@ def main():
         else:
             st.info("法令データが見つかりません")
 
-    # 手続数が多い法令のオンライン化状況データを準備（使用しないが既存コードの互換性のため）
-    top_laws = filtered_df['法令名'].value_counts().head(10).index
-    law_online_data = []
-    for law in top_laws:
-        law_df = filtered_df[filtered_df['法令名'] == law]
-        total = len(law_df)
-        online = len(law_df[law_df['オンライン化の実施状況'].str.contains('実施済', na=False)])
-        rate = (online / total * 100) if total > 0 else 0
-        law_online_data.append({
-            '法令名': law[:30] + ('...' if len(law) > 30 else ''),
-            '手続数': total,
-            'オンライン化済': online,
-            'オンライン化率': rate
-        })
-    law_online_df = pd.DataFrame(law_online_data)
+    # 未使用変数を削除してメモリ解放
 
     st.header(":material/computer: 申請システム分析")
     st.caption("申請システムと事務処理システムの利用状況を分析します。")
@@ -946,8 +926,8 @@ def main():
 
                 # システム別の手続数を集計
                 system_counts = systems.value_counts()
-                # グラフ表示用に上位30件を取得して降順にソート
-                system_counts_display = system_counts.head(30).sort_values(ascending=True)
+                # グラフ表示用に上位15件を取得して降順にソート
+                system_counts_display = system_counts.head(15).sort_values(ascending=True)
 
                 # ラベルを省略処理（長い場合は...で省略）
                 truncated_labels = [label[:25] + '...' if len(label) > 25 else label for label in system_counts_display.index]
@@ -1006,8 +986,8 @@ def main():
 
                 # システム別の手続数を集計
                 process_system_counts = process_systems.value_counts()
-                # グラフ表示用に上位30件を取得して降順にソート
-                process_system_counts_display = process_system_counts.head(30).sort_values(ascending=True)
+                # グラフ表示用に上位15件を取得して降順にソート
+                process_system_counts_display = process_system_counts.head(15).sort_values(ascending=True)
 
                 # ラベルを省略処理（長い場合は...で省略）
                 truncated_labels = [label[:25] + '...' if len(label) > 25 else label for label in process_system_counts_display.index]
@@ -1332,11 +1312,6 @@ def main():
             st.session_state.current_page = total_pages
             st.rerun()
 
-    # 現在のページのデータを取得
-    start_idx = (current_page - 1) * items_per_page
-    end_idx = min(start_idx + items_per_page, total_records)
-    page_df = filtered_df.iloc[start_idx:end_idx]
-
     # 表示する列を重要なものに限定（メモリ削減）
     display_columns = [
         '手続ID',
@@ -1351,8 +1326,17 @@ def main():
     ]
 
     # 存在する列のみを選択
-    available_columns = [col for col in display_columns if col in page_df.columns]
-    display_df = page_df[available_columns].copy()
+    available_columns = [col for col in display_columns if col in filtered_df.columns]
+
+    # 現在のページのデータを取得（必要な列のみを選択してからスライス）
+    start_idx = (current_page - 1) * items_per_page
+    end_idx = min(start_idx + items_per_page, total_records)
+
+    # メモリ効率化: 必要な列のみを選択してからページングを適用
+    if total_records > 0:
+        display_df = filtered_df[available_columns].iloc[start_idx:end_idx].copy()
+    else:
+        display_df = pd.DataFrame(columns=available_columns)
 
     # データフレームを表示（選択機能なし、メモリ削減のため）
     st.dataframe(
@@ -1368,14 +1352,17 @@ def main():
 
     with col1:
         # 現在のページのデータをCSVダウンロード
-        if len(page_df) > 0:
-            csv_page_data = df_to_csv_bytes(page_df)
+        if len(display_df) > 0:
+            # 現在表示中のページデータのみをエクスポート用に再取得
+            export_df = filtered_df.iloc[start_idx:end_idx]
+            csv_page_data = df_to_csv_bytes(export_df)
             st.download_button(
-                label=f":material/download: 現在のページ（{len(page_df)}件）をCSVダウンロード",
+                label=f":material/download: 現在のページ（{len(display_df)}件）をCSVダウンロード",
                 data=csv_page_data,
                 file_name=f"procedures_page_{current_page}.csv",
                 mime="text/csv"
             )
+            del export_df  # メモリ解放
 
     with col2:
         # フィルター適用後の全データをCSVダウンロード（メモリに注意）
