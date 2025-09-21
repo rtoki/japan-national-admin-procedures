@@ -1,0 +1,26 @@
+[theme]
+primaryColor = "#1f77b4"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+
+[server]
+# Renderでの実行時に必要な設定
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+# ファビコンとページタイトル設定
+gatherUsageStats = false
+
+[runner]
+# メモリ効率化のための設定
+magicEnabled = true
+fastReruns = true
+
+[client]
+# パフォーマンス最適化
+showErrorDetails = true
+toolbarMode = "minimal"

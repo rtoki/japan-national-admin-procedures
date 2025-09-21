@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: japan-admin-procedures-dashboard
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run streamlit_app.py --server.port=$PORT --server.address=0.0.0.0
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    autoDeploy: true
+    plan: free  # 無料プランで開始（後で変更可能）
