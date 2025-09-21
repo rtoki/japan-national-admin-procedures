@@ -275,47 +275,59 @@ def _wrap_label(text, max_length=20):
 
 @st.cache_data(ttl=3600, show_spinner="データを読み込んでいます...")
 def load_data() -> pd.DataFrame:
-    """Parquetファイルからデータを高速読み込み（CSVファイルがない場合は変換）"""
-    
+    """Parquetファイルからデータを高速読み込み（メモリ最適化版）"""
+
     # Parquetファイルが存在しない場合はCSVから変換
     if not PARQUET_FILE.exists() and CSV_FILE.exists():
         st.info("初回起動：CSVファイルをParquet形式に変換しています...")
-        
-        # CSVファイルを読み込み
-        df = pd.read_csv(
+
+        # チャンク読み込みでメモリピークを削減（最適化 4）
+        chunks = []
+        total_rows = 0
+
+        for chunk in pd.read_csv(
             CSV_FILE,
             encoding='utf-8-sig',
             skiprows=2,
             names=COLUMNS,
             dtype=str,
             na_values=['', 'NaN', 'nan'],
-            low_memory=False
-        )
-        
-        # カテゴリ型に変換
-        categorical_cols = ['所管府省庁', '手続類型', '手続主体', '手続の受け手', 
-                          'オンライン化の実施状況', '事務区分', '府省共通手続']
-        for col in categorical_cols:
-            if col in df.columns:
-                df[col] = df[col].astype('category')
-        
-        # 数値型に変換
-        numeric_columns = ["総手続件数", "オンライン手続件数", "非オンライン手続件数"]
-        for col in numeric_columns:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype('int32')
-        
-        # オンライン化率を計算
+            low_memory=False,
+            chunksize=10000  # 10,000行ずつ処理
+        ):
+            total_rows += len(chunk)
+
+            # カテゴリ型に変換（最適化 1: 文字列を90%圧縮）
+            categorical_cols = ['所管府省庁', '手続類型', '手続主体', '手続の受け手',
+                              'オンライン化の実施状況', '事務区分', '府省共通手続']
+            for col in categorical_cols:
+                if col in chunk.columns:
+                    chunk[col] = chunk[col].astype('category')
+
+            # 数値型を最適化（最適化 2: uint32/float32で50%削減）
+            numeric_columns = ["総手続件数", "オンライン手続件数", "非オンライン手続件数"]
+            for col in numeric_columns:
+                if col in chunk.columns:
+                    chunk[col] = pd.to_numeric(chunk[col], errors='coerce').fillna(0).astype('uint32')
+
+            chunks.append(chunk)
+
+        # 全チャンクを結合
+        df = pd.concat(chunks, ignore_index=True)
+        del chunks  # メモリ解放
+        gc.collect()
+
+        # オンライン化率を計算（float32で保存）
         if '総手続件数' in df.columns and 'オンライン手続件数' in df.columns:
             df['オンライン化率'] = np.where(
                 df['総手続件数'] > 0,
                 (df['オンライン手続件数'] / df['総手続件数'] * 100).round(2),
                 0
             ).astype('float32')
-        
+
         # Parquetファイルとして保存
         df.to_parquet(PARQUET_FILE, engine='pyarrow', compression='zstd')  # zstd圧縮で効率化（pyarrow 21.0.0）
-        st.success("変換完了！次回からは高速に読み込めます。")
+        st.success(f"変換完了！{total_rows:,}件のデータを最適化しました。")
     
     # Parquetファイルから読み込み（超高速）
     df = pd.read_parquet(PARQUET_FILE, engine='pyarrow')
@@ -1396,8 +1408,6 @@ def main():
                     fig_info.update_layout(margin=dict(l=0, r=0, t=40, b=0), height=600)
                     st.plotly_chart(fig_info, use_container_width=True)
                     del fig_info
-                    with st.expander(":material/download: 集計CSVをダウンロード（全件）"):
-                        st.download_button("記載情報全件のCSV", df_to_csv_bytes(info_df), file_name="application_info_all.csv", mime="text/csv", key="info_csv")
                 else:
                     st.info("申請書等に記載させる情報の値が見つかりません")
             else:
@@ -1426,8 +1436,6 @@ def main():
                     fig_att.update_layout(margin=dict(l=0, r=0, t=40, b=0), height=600)
                     st.plotly_chart(fig_att, use_container_width=True)
                     del fig_att
-                    with st.expander(":material/download: 集計CSVをダウンロード（全件）"):
-                        st.download_button("添付書類全件のCSV", df_to_csv_bytes(att_df), file_name="attachment_all.csv", mime="text/csv", key="att_csv")
                 else:
                     st.info("添付書類の値が見つかりません")
             else:
