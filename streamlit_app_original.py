@@ -886,9 +886,9 @@ def main():
             type_counts = normalized_counts(filtered_df, '手続類型', '手続類型')
             # 定義順があればhead(10)後でもOK、なければ頻度上位10
             if '手続類型' in OPTION_ORDERS:
-                type_counts = type_counts.head(20)
+                type_counts = type_counts.head(10)
             else:
-                type_counts = type_counts.head(20)
+                type_counts = type_counts.head(10)
             if type_counts.sum() > 0:
                 type_df = type_counts.reset_index()
                 type_df.columns = ['手続類型', '件数']
@@ -899,7 +899,7 @@ def main():
                     x='件数',
                     y='手続類型',
                     orientation='h',
-                    title="手続類型TOP20",
+                    title="手続類型TOP10",
                     labels={'件数': '件数', '手続類型': '手続類型'}
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
@@ -970,8 +970,8 @@ def main():
         # 法令別のオンライン化状況
         st.subheader("📊 主要法令のオンライン化状況")
         
-        # 手続数が多い法令TOP20のオンライン化状況
-        top_laws = filtered_df['法令名'].value_counts().head(20).index
+        # 手続数が多い法令TOP10のオンライン化状況
+        top_laws = filtered_df['法令名'].value_counts().head(10).index
         law_online_data = []
         
         for law in top_laws:
