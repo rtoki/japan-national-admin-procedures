@@ -857,6 +857,7 @@ def main():
 
     # ============ 検索機能 ============
     # ============ メインコンテンツ ============
+
     # 概要統計
     st.header("📊 概要統計")
 
@@ -915,7 +916,7 @@ def main():
                 x='件数',
                 y='手続類型',
                 orientation='h',
-                title="手続類型TOP10",
+                title="手続類型",
                 labels={'件数': '件数', '手続類型': '手続類型'}
     ,
                 text_auto=True
@@ -1250,6 +1251,35 @@ def main():
                 st.info("添付書類の値が見つかりません")
 
         st.divider()
-    
+
+    # 手続主体×受け手の組み合わせ分析
+    st.header("🤝 手続主体×受け手の組み合わせ分析")
+    st.caption("どの主体からどの受け手への手続が多いかをマトリックス形式で分析します。")
+
+    if '手続主体' in filtered_df.columns and '手続の受け手' in filtered_df.columns:
+        # クロス集計表を作成
+        cross_tab = pd.crosstab(
+            filtered_df['手続主体'],
+            filtered_df['手続の受け手']
+        )
+
+        if cross_tab.shape[0] > 0 and cross_tab.shape[1] > 0:
+            # ヒートマップ表示
+            fig_heatmap = px.imshow(
+                cross_tab,
+                labels=dict(x="手続の受け手", y="手続主体", color="手続数"),
+                text_auto=True,
+                aspect='auto',
+                color_continuous_scale='Blues',
+                title="手続主体×受け手の手続数分布"
+            )
+            fig_heatmap.update_layout(height=600)
+            st.plotly_chart(fig_heatmap, use_container_width=True)
+            del fig_heatmap
+        else:
+            st.info("分析に必要なデータが不足しています")
+    else:
+        st.warning("手続主体または手続の受け手のデータが存在しません")
+
 if __name__ == "__main__":
     main()
