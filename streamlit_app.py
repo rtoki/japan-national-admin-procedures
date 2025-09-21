@@ -958,36 +958,86 @@ def main():
         else:
             st.info("該当するデータがありません（棒グラフ）")
 
-    # 手続一覧の表示
-    st.subheader("📋 手続一覧")
+    st.header("🏢 府省庁別分析")
 
-    # 全ての列を表示
-    # 選択可能なデータフレームを表示
-    event = st.dataframe(
-        filtered_df.reset_index(drop=True),
-        use_container_width=True,
-        height=400,
-        selection_mode="single-row",
-        on_select="rerun",
-        key="procedure_list_table"
+    # 府省庁別のオンライン化状況で積み上げ棒グラフ
+    st.subheader("📊 府省庁別手続数（オンライン化状況別）")
+
+    # 府省庁別・オンライン化状況別の集計
+    ministry_online_df = filtered_df.groupby(['所管府省庁', 'オンライン化の実施状況']).size().reset_index(name='手続数')
+
+    # 府省庁ごとの合計手続数を計算して、それを基準にソート（全府省庁を含む）
+    ministry_totals = ministry_online_df.groupby('所管府省庁')['手続数'].sum().sort_values(ascending=False)
+
+    # オンライン化状況のラベルを正規化
+    ministry_online_df['オンライン化の実施状況'] = ministry_online_df['オンライン化の実施状況'].apply(
+        lambda x: _normalize_label('オンライン化の実施状況', x)
     )
 
-    # 選択された行がある場合、詳細をモーダルで表示
-    if event.selection and event.selection.rows:
-        selected_idx = event.selection.rows[0]
-        selected_proc = filtered_df.iloc[selected_idx]
-
-        # 詳細をモーダルで表示（自動的に開く）
-        show_procedure_detail(selected_proc['手続ID'], df)
-
-    # CSVダウンロードボタン（全項目）
-    csv_data = df_to_csv_bytes(filtered_df)
-    st.download_button(
-        label="📥 手続一覧をCSVダウンロード",
-        data=csv_data,
-        file_name="procedures_list.csv",
-        mime="text/csv"
+    # 積み上げ棒グラフ（手続数が多い順に並べ替え）
+    fig_ministry = px.bar(
+        ministry_online_df,
+        x='所管府省庁',
+        y='手続数',
+        color='オンライン化の実施状況',
+        title="府省庁別手続数（オンライン化状況別）",
+        labels={'手続数': '手続数', '所管府省庁': '府省庁'},
+        color_discrete_map={
+            '実施済': '#2ca02c',
+            '一部実施済': '#ff7f0e',
+            '未実施': '#d62728',
+            '適用除外': '#9467bd',
+            'その他': '#8c564b'
+        },
+        text_auto=True,
+        category_orders={'所管府省庁': ministry_totals.index.tolist()}  # 手続数が多い順に並べる
     )
+    fig_ministry.update_layout(xaxis_tickangle=-45, barmode='stack')
+    st.plotly_chart(fig_ministry, use_container_width=True)
+    del fig_ministry
+
+    # 府省庁別のオンライン化率
+    ministry_stats = filtered_df.groupby('所管府省庁').agg({
+        '手続ID': 'count',
+        '総手続件数': 'sum',
+        'オンライン手続件数': 'sum'
+    }).reset_index()
+    ministry_stats.columns = ['府省庁', '手続数', '総手続件数', 'オンライン手続件数']
+    ministry_stats['オンライン化率'] = (
+        ministry_stats['オンライン手続件数'] / ministry_stats['総手続件数'] * 100
+
+    ).round(2)
+    ministry_stats = ministry_stats[ministry_stats['総手続件数'] > 0]
+    ministry_stats = ministry_stats.sort_values('オンライン化率', ascending=False).head(20)
+
+    # 手続主体×受け手の組み合わせ分析
+    st.header("🤝 手続主体×受け手の組み合わせ分析")
+    st.caption("どの主体からどの受け手への手続が多いかをマトリックス形式で分析します。")
+
+    if '手続主体' in filtered_df.columns and '手続の受け手' in filtered_df.columns:
+        # クロス集計表を作成
+        cross_tab = pd.crosstab(
+            filtered_df['手続主体'],
+            filtered_df['手続の受け手']
+        )
+
+        if cross_tab.shape[0] > 0 and cross_tab.shape[1] > 0:
+            # ヒートマップ表示
+            fig_heatmap = px.imshow(
+                cross_tab,
+                labels=dict(x="手続の受け手", y="手続主体", color="手続数"),
+                text_auto=True,
+                aspect='auto',
+                color_continuous_scale='Blues',
+                title="手続主体×受け手の手続数分布"
+            )
+            fig_heatmap.update_layout(height=600)
+            st.plotly_chart(fig_heatmap, use_container_width=True)
+            del fig_heatmap
+        else:
+            st.info("分析に必要なデータが不足しています")
+    else:
+        st.warning("手続主体または手続の受け手のデータが存在しません")
 
     # 法令別分析
     st.header("⚖️ 法令別分析")
@@ -1069,59 +1119,6 @@ def main():
             'オンライン化率': rate
         })
     law_online_df = pd.DataFrame(law_online_data)
-
-    st.header("🏢 府省庁別分析")
-
-    # 府省庁別のオンライン化状況で積み上げ棒グラフ
-    st.subheader("📊 府省庁別手続数（オンライン化状況別）")
-
-    # 府省庁別・オンライン化状況別の集計
-    ministry_online_df = filtered_df.groupby(['所管府省庁', 'オンライン化の実施状況']).size().reset_index(name='手続数')
-
-    # 府省庁ごとの合計手続数を計算して、それを基準にソート（全府省庁を含む）
-    ministry_totals = ministry_online_df.groupby('所管府省庁')['手続数'].sum().sort_values(ascending=False)
-
-    # オンライン化状況のラベルを正規化
-    ministry_online_df['オンライン化の実施状況'] = ministry_online_df['オンライン化の実施状況'].apply(
-        lambda x: _normalize_label('オンライン化の実施状況', x)
-    )
-
-    # 積み上げ棒グラフ（手続数が多い順に並べ替え）
-    fig_ministry = px.bar(
-        ministry_online_df,
-        x='所管府省庁',
-        y='手続数',
-        color='オンライン化の実施状況',
-        title="府省庁別手続数（オンライン化状況別）",
-        labels={'手続数': '手続数', '所管府省庁': '府省庁'},
-        color_discrete_map={
-            '実施済': '#2ca02c',
-            '一部実施済': '#ff7f0e',
-            '未実施': '#d62728',
-            '適用除外': '#9467bd',
-            'その他': '#8c564b'
-        },
-        text_auto=True,
-        category_orders={'所管府省庁': ministry_totals.index.tolist()}  # 手続数が多い順に並べる
-    )
-    fig_ministry.update_layout(xaxis_tickangle=-45, barmode='stack')
-    st.plotly_chart(fig_ministry, use_container_width=True)
-    del fig_ministry
-
-    # 府省庁別のオンライン化率
-    ministry_stats = filtered_df.groupby('所管府省庁').agg({
-        '手続ID': 'count',
-        '総手続件数': 'sum',
-        'オンライン手続件数': 'sum'
-    }).reset_index()
-    ministry_stats.columns = ['府省庁', '手続数', '総手続件数', 'オンライン手続件数']
-    ministry_stats['オンライン化率'] = (
-        ministry_stats['オンライン手続件数'] / ministry_stats['総手続件数'] * 100
-
-    ).round(2)
-    ministry_stats = ministry_stats[ministry_stats['総手続件数'] > 0]
-    ministry_stats = ministry_stats.sort_values('オンライン化率', ascending=False).head(20)
-
 
     st.header("💻 申請システム分析")
     st.caption("申請システムと事務処理システムの利用状況を分析します。")
@@ -1448,12 +1445,16 @@ def main():
 
             if len(submit_orgs) > 0:
                 org_counts = submit_orgs.value_counts()
+                # 降順にソート（グラフ上で上から下へ多い順に表示）
+                org_counts_display = org_counts.head(20).sort_values(ascending=True)
 
-                fig_org = px.pie(
-                    values=org_counts.values,
-                    names=org_counts.index,
-                    title="提出先機関の分布",
-                    hole=0.4
+                fig_org = px.bar(
+                    x=org_counts_display.values,
+                    y=org_counts_display.index,
+                    orientation='h',
+                    title="提出先機関別手続数",
+                    labels={'x': '手続数', 'y': '提出先機関'},
+                    text_auto=True
                 )
                 fig_org.update_layout(height=500)
                 st.plotly_chart(fig_org, use_container_width=True)
@@ -1465,34 +1466,36 @@ def main():
 
     st.divider()
 
-    # 手続主体×受け手の組み合わせ分析
-    st.header("🤝 手続主体×受け手の組み合わせ分析")
-    st.caption("どの主体からどの受け手への手続が多いかをマトリックス形式で分析します。")
+    # 手続一覧の表示（最後に配置）
+    st.header("📋 手続一覧")
 
-    if '手続主体' in filtered_df.columns and '手続の受け手' in filtered_df.columns:
-        # クロス集計表を作成
-        cross_tab = pd.crosstab(
-            filtered_df['手続主体'],
-            filtered_df['手続の受け手']
-        )
+    # 全ての列を表示
+    # 選択可能なデータフレームを表示
+    event = st.dataframe(
+        filtered_df.reset_index(drop=True),
+        use_container_width=True,
+        height=400,
+        selection_mode="single-row",
+        on_select="rerun",
+        key="procedure_list_table"
+    )
 
-        if cross_tab.shape[0] > 0 and cross_tab.shape[1] > 0:
-            # ヒートマップ表示
-            fig_heatmap = px.imshow(
-                cross_tab,
-                labels=dict(x="手続の受け手", y="手続主体", color="手続数"),
-                text_auto=True,
-                aspect='auto',
-                color_continuous_scale='Blues',
-                title="手続主体×受け手の手続数分布"
-            )
-            fig_heatmap.update_layout(height=600)
-            st.plotly_chart(fig_heatmap, use_container_width=True)
-            del fig_heatmap
-        else:
-            st.info("分析に必要なデータが不足しています")
-    else:
-        st.warning("手続主体または手続の受け手のデータが存在しません")
+    # 選択された行がある場合、詳細をモーダルで表示
+    if event.selection and event.selection.rows:
+        selected_idx = event.selection.rows[0]
+        selected_proc = filtered_df.iloc[selected_idx]
+
+        # 詳細をモーダルで表示（自動的に開く）
+        show_procedure_detail(selected_proc['手続ID'], df)
+
+    # CSVダウンロードボタン（全項目）
+    csv_data = df_to_csv_bytes(filtered_df)
+    st.download_button(
+        label="📥 手続一覧をCSVダウンロード",
+        data=csv_data,
+        file_name="procedures_list.csv",
+        mime="text/csv"
+    )
 
 if __name__ == "__main__":
     main()
