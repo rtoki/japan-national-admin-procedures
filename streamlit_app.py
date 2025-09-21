@@ -241,6 +241,38 @@ def order_series_by_option(series: pd.Series, key: str) -> pd.Series:
     idx = {v: i for i, v in enumerate(order)}
     return series.sort_index(key=lambda s: s.map(lambda x: idx.get(x, len(idx))))
 
+def _wrap_label(text, max_length=20):
+    """長いラベルを改行する"""
+    if pd.isna(text) or len(str(text)) <= max_length:
+        return str(text)
+
+    words = str(text).split()
+    lines = []
+    current_line = []
+    current_length = 0
+
+    for word in words:
+        if current_length + len(word) <= max_length:
+            current_line.append(word)
+            current_length += len(word) + 1
+        else:
+            if current_line:
+                lines.append(' '.join(current_line))
+            current_line = [word]
+            current_length = len(word)
+
+    if current_line:
+        lines.append(' '.join(current_line))
+
+    # 単語区切りがない場合（日本語など）の処理
+    if len(lines) == 1 and len(lines[0]) > max_length:
+        text = lines[0]
+        lines = []
+        for i in range(0, len(text), max_length):
+            lines.append(text[i:i+max_length])
+
+    return '<br>'.join(lines)
+
 @st.cache_data(ttl=3600, show_spinner="データを読み込んでいます...")
 def load_data() -> pd.DataFrame:
     """Parquetファイルからデータを高速読み込み（CSVファイルがない場合は変換）"""
@@ -961,17 +993,20 @@ def main():
     st.header("⚖️ 法令別分析")
 
     # 法令別の手続数
-    st.subheader("📚 法令別手続数（TOP20）")
-    law_counts = filtered_df['法令名'].value_counts().head(20)
+    st.subheader("📚 法令別手続数")
+    law_counts = filtered_df['法令名'].value_counts()
     if len(law_counts) > 0:
-        # 降順にソート（少ない順から多い順へ、グラフ上で上から下へ多い順に表示）
-        law_counts = law_counts.sort_values(ascending=True)
+        # グラフ表示用に上位30件を取得して降順にソート
+        law_counts_display = law_counts.head(30).sort_values(ascending=True)
+        # ラベルを省略処理（長い場合は...で省略）
+        truncated_labels = [label[:40] + '...' if len(label) > 40 else label for label in law_counts_display.index]
         fig_law = px.bar(
-            x=law_counts.values,
-            y=law_counts.index,
+            x=law_counts_display.values,
+            y=truncated_labels,
             orientation='h',
             title="法令別手続数",
-            labels={'x': '手続数', 'y': '法令名'}
+            labels={'x': '手続数', 'y': '法令名'},
+            hover_data={'y': law_counts_display.index}  # ホバー時に完全なラベルを表示
 ,
                 text_auto=True
             )
@@ -982,7 +1017,7 @@ def main():
     # 法令別のオンライン化状況
     st.subheader("📊 主要法令のオンライン化状況")
 
-    # 手続数が多い法令TOP10のオンライン化状況
+    # 手続数が多い法令のオンライン化状況
     top_laws = filtered_df['法令名'].value_counts().head(10).index
     law_online_data = []
 
@@ -1125,19 +1160,28 @@ def main():
         system_df = filtered_df[filtered_df['情報システム(申請)'].notna()].copy()
 
         if len(system_df) > 0:
+            # セミコロン区切りの複数選択を分解して集計
+            systems = system_df['情報システム(申請)'].str.split(';').explode()
+            systems = systems.str.strip()  # 前後の空白を削除
+            systems = systems[systems != '']  # 空文字を除外
+
             # システム別の手続数を集計
-            system_counts = system_df['情報システム(申請)'].value_counts().head(20)
-            # 降順にソート（グラフ上で上から下へ多い順に表示）
-            system_counts = system_counts.sort_values(ascending=True)
+            system_counts = systems.value_counts()
+            # グラフ表示用に上位30件を取得して降順にソート
+            system_counts_display = system_counts.head(30).sort_values(ascending=True)
+
+            # ラベルを省略処理（長い場合は...で省略）
+            truncated_labels = [label[:25] + '...' if len(label) > 25 else label for label in system_counts_display.index]
 
             # 申請システム別手続数の棒グラフ
             fig_system = px.bar(
-                x=system_counts.values,
-                y=system_counts.index,
+                x=system_counts_display.values,
+                y=truncated_labels,
                 orientation='h',
-                title="申請システム別手続数（TOP20）",
+                title="申請システム別手続数",
                 labels={'x': '手続数', 'y': '申請システム'},
-                text_auto=True
+                text_auto=True,
+                hover_data={'y': system_counts_display.index}  # ホバー時に完全なラベルを表示
             )
             fig_system.update_layout(height=600)
             st.plotly_chart(fig_system, use_container_width=True)
@@ -1166,19 +1210,28 @@ def main():
         process_system_df = filtered_df[filtered_df['情報システム(事務処理)'].notna()].copy()
 
         if len(process_system_df) > 0:
+            # セミコロン区切りの複数選択を分解して集計
+            process_systems = process_system_df['情報システム(事務処理)'].str.split(';').explode()
+            process_systems = process_systems.str.strip()  # 前後の空白を削除
+            process_systems = process_systems[process_systems != '']  # 空文字を除外
+
             # システム別の手続数を集計
-            process_system_counts = process_system_df['情報システム(事務処理)'].value_counts().head(20)
-            # 降順にソート（グラフ上で上から下へ多い順に表示）
-            process_system_counts = process_system_counts.sort_values(ascending=True)
+            process_system_counts = process_systems.value_counts()
+            # グラフ表示用に上位30件を取得して降順にソート
+            process_system_counts_display = process_system_counts.head(30).sort_values(ascending=True)
+
+            # ラベルを省略処理（長い場合は...で省略）
+            truncated_labels = [label[:25] + '...' if len(label) > 25 else label for label in process_system_counts_display.index]
 
             # 事務処理システム別手続数の棒グラフ
             fig_process_system = px.bar(
-                x=process_system_counts.values,
-                y=process_system_counts.index,
+                x=process_system_counts_display.values,
+                y=truncated_labels,
                 orientation='h',
-                title="事務処理システム別手続数（TOP20）",
+                title="事務処理システム別手続数",
                 labels={'x': '手続数', 'y': '事務処理システム'},
-                text_auto=True
+                text_auto=True,
+                hover_data={'y': process_system_counts_display.index}  # ホバー時に完全なラベルを表示
             )
             fig_process_system.update_layout(height=600)
             st.plotly_chart(fig_process_system, use_container_width=True)
@@ -1213,8 +1266,13 @@ def main():
             cols = st.columns(len(dist_cols))
             for idx, (cname, title_txt) in enumerate(dist_cols):
                 with cols[idx]:
+                    # セミコロン区切りの複数選択を分解
                     series = filtered_df[cname].dropna().astype(str)
-                    series = series[series.str.strip() != '']
+                    # セミコロンで分割して展開
+                    if series.str.contains(';').any():
+                        series = series.str.split(';').explode()
+                    series = series.str.strip()  # 前後の空白を削除
+                    series = series[series != '']  # 空文字を除外
                     if len(series) > 0:
                         dfv = _topn_with_other(series, top=pie_top, other_label='その他')
                         dfv[cname] = dfv['label'].map(lambda s: _wrap_label(s, width=10, max_lines=2))
@@ -1231,33 +1289,72 @@ def main():
 
         st.divider()
 
-        # --- 中段：添付書類トップ ---
-        st.subheader("📌 添付書類の頻出（TOP20）")
-        if att_col in filtered_df.columns:
-            att_series = filtered_df[att_col].dropna().apply(_split_multi_values).explode().astype(str)
-            att_series = att_series[att_series.str.strip() != '']
-            if len(att_series) > 0:
-                top_k = 20  # 固定値に設定（スライダー削除）
-                att_counts = att_series.value_counts().head(top_k)
-                att_df = att_counts.reset_index()
-                att_df.columns = ['添付書類', '件数']
-                # 降順にソート（グラフ上で上から下へ多い順に表示）
-                att_df = att_df.sort_values('件数', ascending=True)
-                fig_att = px.bar(
-                    att_df,
-                    x='件数', y='添付書類', orientation='h',
-                    title=f"添付書類の頻出（TOP{top_k})",
-                    labels={'件数': '件数', '添付書類': '添付書類'}
-        ,
-                text_auto=True
-            )
-                fig_att.update_layout(margin=dict(l=0, r=0, t=40, b=0), height=520)
-                st.plotly_chart(fig_att, use_container_width=True)
-                del fig_att
-                with st.expander("📥 集計CSVをダウンロード"):
-                    st.download_button("添付書類TOPのCSV", df_to_csv_bytes(att_df), file_name="attachment_top.csv", mime="text/csv")
+        # --- 中段：申請書記載情報と添付書類 ---
+        st.subheader("📝 申請書類の記載情報と添付書類")
+
+        col1, col2 = st.columns(2)
+
+        # 申請書等に記載させる情報
+        with col1:
+            st.markdown("#### 申請書等に記載させる情報")
+            info_col = '申請書等に記載させる情報'
+            if info_col in filtered_df.columns:
+                info_series = filtered_df[info_col].dropna().apply(_split_multi_values).explode().astype(str)
+                info_series = info_series[info_series.str.strip() != '']
+                if len(info_series) > 0:
+                    # 全ての情報を集計
+                    info_counts = info_series.value_counts()
+                    info_df = info_counts.reset_index()
+                    info_df.columns = ['記載情報', '件数']
+                    # グラフ表示用に上位25件を取得して降順にソート
+                    info_df_display = info_df.sort_values('件数', ascending=True).head(25)
+
+                    fig_info = px.bar(
+                        info_df_display,
+                        x='件数', y='記載情報', orientation='h',
+                        title="記載情報の頻出",
+                        labels={'件数': '件数', '記載情報': '記載情報'},
+                        text_auto=True
+                    )
+                    fig_info.update_layout(margin=dict(l=0, r=0, t=40, b=0), height=600)
+                    st.plotly_chart(fig_info, use_container_width=True)
+                    del fig_info
+                    with st.expander("📥 集計CSVをダウンロード（全件）"):
+                        st.download_button("記載情報全件のCSV", df_to_csv_bytes(info_df), file_name="application_info_all.csv", mime="text/csv", key="info_csv")
+                else:
+                    st.info("申請書等に記載させる情報の値が見つかりません")
             else:
-                st.info("添付書類の値が見つかりません")
+                st.warning("申請書等に記載させる情報の列が存在しません")
+
+        # 添付書類の頻出
+        with col2:
+            st.markdown("#### 添付書類")
+            if att_col in filtered_df.columns:
+                att_series = filtered_df[att_col].dropna().apply(_split_multi_values).explode().astype(str)
+                att_series = att_series[att_series.str.strip() != '']
+                if len(att_series) > 0:
+                    # 全ての添付書類を集計
+                    att_counts = att_series.value_counts()
+                    att_df = att_counts.reset_index()
+                    att_df.columns = ['添付書類', '件数']
+                    # 降順にソート（グラフ上で上から下へ多い順に表示）、上位30件のみ表示用
+                    att_df_display = att_df.sort_values('件数', ascending=True).head(30)
+                    fig_att = px.bar(
+                        att_df_display,
+                        x='件数', y='添付書類', orientation='h',
+                        title="添付書類の頻出",
+                        labels={'件数': '件数', '添付書類': '添付書類'},
+                        text_auto=True
+                    )
+                    fig_att.update_layout(margin=dict(l=0, r=0, t=40, b=0), height=600)
+                    st.plotly_chart(fig_att, use_container_width=True)
+                    del fig_att
+                    with st.expander("📥 集計CSVをダウンロード（全件）"):
+                        st.download_button("添付書類全件のCSV", df_to_csv_bytes(att_df), file_name="attachment_all.csv", mime="text/csv", key="att_csv")
+                else:
+                    st.info("添付書類の値が見つかりません")
+            else:
+                st.warning("添付書類の列が存在しません")
 
         st.divider()
 
@@ -1276,15 +1373,15 @@ def main():
             personal_events = personal_events[personal_events.str.strip() != '']
 
             if len(personal_events) > 0:
-                event_counts = personal_events.value_counts().head(15)
-                # 降順にソート（最も多いものが上に）
-                event_counts = event_counts.sort_values(ascending=True)
+                event_counts = personal_events.value_counts()
+                # グラフ表示用に上位20件を取得して降順にソート
+                event_counts_display = event_counts.head(20).sort_values(ascending=True)
 
                 fig_personal = px.bar(
-                    x=event_counts.values,
-                    y=event_counts.index,
+                    x=event_counts_display.values,
+                    y=event_counts_display.index,
                     orientation='h',
-                    title="個人ライフイベント別手続数（TOP15）",
+                    title="個人ライフイベント別手続数",
                     labels={'x': '手続数', 'y': 'ライフイベント'},
                     text_auto=True
                 )
@@ -1305,15 +1402,15 @@ def main():
             corporate_events = corporate_events[corporate_events.str.strip() != '']
 
             if len(corporate_events) > 0:
-                event_counts = corporate_events.value_counts().head(15)
-                # 降順にソート（最も多いものが上に）
-                event_counts = event_counts.sort_values(ascending=True)
+                event_counts = corporate_events.value_counts()
+                # グラフ表示用に上位20件を取得して降順にソート
+                event_counts_display = event_counts.head(20).sort_values(ascending=True)
 
                 fig_corporate = px.bar(
-                    x=event_counts.values,
-                    y=event_counts.index,
+                    x=event_counts_display.values,
+                    y=event_counts_display.index,
                     orientation='h',
-                    title="法人ライフイベント別手続数（TOP15）",
+                    title="法人ライフイベント別手続数",
                     labels={'x': '手続数', 'y': 'ライフイベント'},
                     text_auto=True
                 )
@@ -1324,6 +1421,69 @@ def main():
                 st.info("法人ライフイベントのデータがありません")
         else:
             st.warning("法人ライフイベントの列が存在しません")
+
+    st.divider()
+
+    # 士業分析
+    st.header("⚖️ 申請に関連する士業分析")
+    st.caption("代理申請が可能な士業の分布を分析します。")
+
+    if '申請に関連する士業' in filtered_df.columns:
+        # マルチバリュー対応（カンマ区切り等）
+        professionals = filtered_df['申請に関連する士業'].dropna().apply(_split_multi_values).explode()
+        professionals = professionals[professionals.str.strip() != '']
+
+        if len(professionals) > 0:
+            prof_counts = professionals.value_counts()
+            # グラフ表示用に上位20件を取得して降順にソート
+            prof_counts_display = prof_counts.head(20).sort_values(ascending=True)
+
+            fig_prof = px.bar(
+                x=prof_counts_display.values,
+                y=prof_counts_display.index,
+                orientation='h',
+                title="申請に関連する士業別手続数",
+                labels={'x': '手続数', 'y': '士業'},
+                text_auto=True
+            )
+            fig_prof.update_layout(height=500)
+            st.plotly_chart(fig_prof, use_container_width=True)
+            del fig_prof
+        else:
+            st.info("申請に関連する士業のデータがありません")
+    else:
+        st.warning("申請に関連する士業の列が存在しません")
+
+    st.divider()
+
+    # 提出機関分析
+    st.header("🏛️ 申請を提出する機関分析")
+    st.caption("申請の提出先機関の分布を分析します。")
+
+    if '申請を提出する機関' in filtered_df.columns:
+        # マルチバリュー対応（セミコロン区切り等）
+        submit_orgs = filtered_df['申請を提出する機関'].dropna().astype(str)
+        if submit_orgs.str.contains(';').any():
+            submit_orgs = submit_orgs.str.split(';').explode()
+        submit_orgs = submit_orgs.str.strip()
+        submit_orgs = submit_orgs[submit_orgs != '']
+
+        if len(submit_orgs) > 0:
+            org_counts = submit_orgs.value_counts()
+
+            fig_org = px.pie(
+                values=org_counts.values,
+                names=org_counts.index,
+                title="申請を提出する機関の分布",
+                hole=0.4
+            )
+            fig_org.update_layout(height=450)
+            st.plotly_chart(fig_org, use_container_width=True)
+            del fig_org
+        else:
+            st.info("申請を提出する機関のデータがありません")
+    else:
+        st.warning("申請を提出する機関の列が存在しません")
 
     st.divider()
 
